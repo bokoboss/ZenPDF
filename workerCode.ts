@@ -15,15 +15,24 @@ if (typeof document === 'undefined') {
 }
 if (typeof navigator === 'undefined') { self.navigator = { userAgent: 'worker' }; }
 
-importScripts('https://cdn.jsdelivr.net/npm/pdf-lib@1.17.1/dist/pdf-lib.min.js');
-importScripts('https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js');
-
-self.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+// Import libraries securely
+try {
+  importScripts('https://cdn.jsdelivr.net/npm/pdf-lib@1.17.1/dist/pdf-lib.min.js');
+  importScripts('https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js');
+  self.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+} catch (e) {
+  self.postMessage({ type: 'ERROR', payload: 'Failed to load PDF libraries. Please check your internet connection.' });
+}
 
 self.onmessage = async (e) => {
   const { type, payload } = e.data;
 
   try {
+    // Check if libraries are loaded
+    if (!self.PDFLib || !self.pdfjsLib) {
+       throw new Error('PDF libraries not initialized.');
+    }
+
     if (type === 'PARSE_FILE') {
       const { file, fileId } = payload;
 
@@ -68,7 +77,7 @@ self.onmessage = async (e) => {
       const pdfCache = {}; 
       const imageCache = {};
 
-      const pagesToProcess = pages || []; // For MERGE_PDFS, we iterate differently below
+      const pagesToProcess = pages || []; 
 
       if (type === 'MERGE_PDFS') {
           // Quick Merge (All Files)
@@ -135,7 +144,7 @@ self.onmessage = async (e) => {
     }
   } catch (error) {
     console.error('Worker Inner Error:', error);
-    self.postMessage({ type: 'ERROR', payload: error.message });
+    self.postMessage({ type: 'ERROR', payload: error.message || 'Unknown processing error' });
   }
 };
 `;
