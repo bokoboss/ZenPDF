@@ -17,7 +17,7 @@ export function UploadPage() {
     setIsDragOver(false);
     if (e.dataTransfer.files) {
         const allowed = ['application/pdf', 'image/jpeg', 'image/png'];
-        const files = Array.from(e.dataTransfer.files).filter((f: File) => allowed.includes(f.type));
+        const files = Array.from(e.dataTransfer.files).filter(f => allowed.includes(f.type));
         if (files.length > 0) {
             setIsDropped(true);
             await new Promise(resolve => setTimeout(resolve, 800)); // Gentle delay
