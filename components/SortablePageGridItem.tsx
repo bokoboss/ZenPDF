@@ -6,7 +6,16 @@ import { PageItem } from '../types';
 import { cn } from '../utils';
 import { SkeletonPage } from './SkeletonPage';
 
-export function SortablePageGridItem({ page, isSelected, onToggleSelect, onRotate, onRemove, isOverlay = false }: { page: PageItem, isSelected?: boolean, onToggleSelect?: (id: string, e: React.MouseEvent) => void, onRotate?: (id: string) => void, onRemove?: (id: string) => void, isOverlay?: boolean }) {
+interface SortablePageGridItemProps {
+  page: PageItem;
+  isSelected?: boolean;
+  onToggleSelect?: (id: string, e: React.MouseEvent) => void;
+  onRotate?: (id: string) => void;
+  onRemove?: (id: string) => void;
+  isOverlay?: boolean;
+}
+
+export const SortablePageGridItem: React.FC<SortablePageGridItemProps> = ({ page, isSelected, onToggleSelect, onRotate, onRemove, isOverlay = false }) => {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: page.uniqueId });
   const style = { transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.3 : 1 };
 

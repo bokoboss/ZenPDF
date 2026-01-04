@@ -5,7 +5,12 @@ import { GripVertical, Loader2, Trash2 } from 'lucide-react';
 import { PdfFile } from '../types';
 import { cn } from '../utils';
 
-export function SortableFileItem({ file, onRemove }: { file: PdfFile, onRemove: (id: string) => void }) {
+interface SortableFileItemProps {
+  file: PdfFile;
+  onRemove: (id: string) => void;
+}
+
+export const SortableFileItem: React.FC<SortableFileItemProps> = ({ file, onRemove }) => {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: file.id });
   const style = { transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.8 : 1 };
 
