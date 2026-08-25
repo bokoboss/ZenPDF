@@ -11,7 +11,7 @@ permissions:
 
 jobs:
   quality:
-    name: Typecheck and build (Node ${{ matrix.node }})
+    name: Typecheck, test, build (Node ${{ matrix.node }})
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -32,6 +32,9 @@ jobs:
 
       - name: Typecheck
         run: npm run typecheck
+
+      - name: Test
+        run: npm run test
 
       - name: Production build
         run: npm run build
