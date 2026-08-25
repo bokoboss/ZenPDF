@@ -41,7 +41,7 @@ jobs:
         run: npm run build
 
   browser-pdf-output:
-    name: Browser PDF output regression (Chromium)
+    name: Browser PDF output + visual baseline (Chromium)
     runs-on: ubuntu-latest
 
     steps:
@@ -57,8 +57,20 @@ jobs:
       - name: Install dependencies
         run: npm ci --no-audit --no-fund
 
+      - name: Production build
+        run: npm run build
+
       - name: Install Chromium
         run: npx playwright install --with-deps chromium
 
-      - name: Browser PDF output tests
+      - name: Browser PDF output and visual tests
         run: npm run test:e2e
+
+      - name: Upload visual baseline
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: zenpdf-visual-baseline
+          path: test-results/visual-baseline
+          if-no-files-found: warn
+          retention-days: 30
