@@ -109,6 +109,7 @@ export class PdfWorkerClient {
       task.settled = true;
       task.reject(new PdfDomainError('TASK_CANCELLED', 'PDF task was cancelled.'));
     }
+    this.tasks.delete(taskId);
 
     const request: Extract<WorkerRequest, { type: 'CANCEL_TASK' }> = {
       type: 'CANCEL_TASK',
