@@ -1,12 +1,18 @@
-import { create } from 'zustand';
 import { arrayMove } from '@dnd-kit/sortable';
-import { WORKER_CODE } from './workerCode';
+import { create } from 'zustand';
 import { generateId } from './utils';
-import { PdfFile, PageItem, Toast } from './types';
+import type { PageItem, PdfFile, Toast } from './types';
+import { PdfDomainError } from './src/pdf/errors';
+import type { WorkerResponse } from './src/pdf/protocol';
+import { PdfWorkerClient } from './src/pdf/workerClient';
+import {
+  EXTRACTED_OUTPUT_OWNER,
+  MERGED_OUTPUT_OWNER,
+  ResourceRegistry,
+  thumbnailOwner,
+} from './src/pdf/resources';
 
-const revokeObjectUrl = (url: string | null | undefined) => {
-  if (url) URL.revokeObjectURL(url);
-};
+export const pdfResourceRegistry = new ResourceRegistry();
 
 interface PdfStore {
   files: PdfFile[];
@@ -14,461 +20,607 @@ interface PdfStore {
   selectedPageIds: string[];
   currentPage: number;
   worker: Worker | null;
+  workerClient: PdfWorkerClient | null;
+  sessionId: string | null;
+  parseTaskIds: Record<string, string>;
+  saveTaskId: string | null;
+  extractTaskId: string | null;
   mergedUrl: string | null;
   extractedUrl: string | null;
   isSaving: boolean;
   isExtracting: boolean;
-  history: { past: PageItem[][]; future: PageItem[][]; };
+  history: { past: PageItem[][]; future: PageItem[][] };
   toasts: Toast[];
-  
+
   initWorker: () => void;
-  resetAll: () => void; 
+  restartWorker: () => void;
+  resetAll: () => void;
   addFiles: (newFiles: File[]) => void;
   removeFile: (id: string) => void;
   reorderFiles: (activeId: string, overId: string) => void;
   setPage: (page: number) => void;
   updateFileStatus: (id: string, updates: Partial<PdfFile>) => void;
   addThumbnail: (id: string, index: number, url: string) => void;
-  
+
   initPageEditor: () => void;
   reorderPages: (activeId: string, overId: string) => void;
   moveSelectedPages: (activeId: string, overId: string) => void;
   rotatePage: (uniqueId: string) => void;
   removePage: (uniqueId: string) => void;
-  
+
   togglePageSelection: (uniqueId: string) => void;
-  setPageSelection: (ids: string[]) => void; 
+  setPageSelection: (ids: string[]) => void;
   selectAllPages: () => void;
   deselectAllPages: () => void;
   rotateSelectedPages: () => void;
   removeSelectedPages: () => void;
   extractSelectedPages: () => void;
-  
+
   undo: () => void;
   redo: () => void;
 
   mergeFiles: () => void;
   mergePages: () => void;
   setMergedUrl: (url: string | null) => void;
-  
+
   addToast: (message: string, type?: 'success' | 'error' | 'info') => void;
   removeToast: (id: string) => void;
 }
 
-export const usePdfStore = create<PdfStore>((set, get) => ({
-  files: [],
-  pageOrder: [],
-  selectedPageIds: [],
-  currentPage: 1,
-  worker: null,
-  mergedUrl: null,
-  extractedUrl: null,
-  isSaving: false,
-  isExtracting: false,
-  history: { past: [], future: [] },
-  toasts: [],
+function thumbnailUrls(files: PdfFile[]): string[] {
+  return files.flatMap(file => file.thumbnails);
+}
 
-  initWorker: () => {
-    if (get().worker) return;
-    const blob = new Blob([WORKER_CODE], { type: 'application/javascript' });
-    const workerUrl = URL.createObjectURL(blob);
-    const worker = new Worker(workerUrl);
-    URL.revokeObjectURL(workerUrl);
-    
-    worker.onmessage = (e) => {
-      const { type, payload } = e.data;
-      switch (type) {
-        case 'FILE_PARSED': {
-          if (!get().files.some(file => file.id === payload.fileId)) return;
+export const usePdfStore = create<PdfStore>((set, get) => {
+  const releaseMergedOutput = () => {
+    const { mergedUrl } = get();
+    pdfResourceRegistry.release(MERGED_OUTPUT_OWNER, [mergedUrl]);
+    set({ mergedUrl: null });
+  };
 
-          set(state => {
-            const updatedFiles = state.files.map(f => 
-              f.id === payload.fileId 
-                ? { ...f, pageCount: payload.pageCount, thumbnails: new Array(payload.pageCount).fill('') }
-                : f
-            );
-            let newPageOrder = state.pageOrder;
-            if (state.currentPage === 3) {
-               const newItems: PageItem[] = [];
-               for(let i = 0; i < payload.pageCount; i++) {
-                 newItems.push({ uniqueId: generateId(), fileId: payload.fileId, pageIndex: i, thumb: '', rotation: 0 });
-               }
-               newPageOrder = [...state.pageOrder, ...newItems];
+  const releaseExtractedOutput = () => {
+    const { extractedUrl } = get();
+    pdfResourceRegistry.release(EXTRACTED_OUTPUT_OWNER, [extractedUrl]);
+    set({ extractedUrl: null });
+  };
+
+  const invalidateMergedOutput = () => {
+    const { workerClient, saveTaskId } = get();
+    if (saveTaskId) workerClient?.cancel(saveTaskId);
+    releaseMergedOutput();
+    set({ isSaving: false, saveTaskId: null });
+  };
+
+  const handleWorkerResponse = (client: PdfWorkerClient, response: WorkerResponse) => {
+    const state = get();
+    if (state.workerClient !== client || state.sessionId !== response.sessionId) return;
+
+    switch (response.type) {
+      case 'FILE_PARSED': {
+        const { fileId, pageCount } = response.payload;
+        if (get().parseTaskIds[fileId] !== response.taskId) return;
+        if (!get().files.some(file => file.id === fileId)) return;
+
+        set(current => {
+          const updatedFiles = current.files.map(file => (
+            file.id === fileId
+              ? { ...file, pageCount, thumbnails: new Array(pageCount).fill('') }
+              : file
+          ));
+          let newPageOrder = current.pageOrder;
+          if (current.currentPage === 3 && !current.pageOrder.some(page => page.fileId === fileId)) {
+            const newItems: PageItem[] = [];
+            for (let pageIndex = 0; pageIndex < pageCount; pageIndex += 1) {
+              newItems.push({ uniqueId: generateId(), fileId, pageIndex, thumb: '', rotation: 0 });
             }
-            return { files: updatedFiles, pageOrder: newPageOrder };
-          });
-          break;
-        }
-        case 'THUMBNAIL_GENERATED': {
-          const targetFile = get().files.find(file => file.id === payload.fileId);
-          if (!targetFile) {
-            revokeObjectUrl(payload.url);
-            return;
+            newPageOrder = [...current.pageOrder, ...newItems];
           }
-
-          const previousUrl = targetFile.thumbnails[payload.pageIndex];
-          if (previousUrl && previousUrl !== payload.url) revokeObjectUrl(previousUrl);
-
-          set(state => {
-             const updatedFiles = state.files.map(f => {
-               if (f.id !== payload.fileId) return f;
-               const newThumbs = [...f.thumbnails];
-               newThumbs[payload.pageIndex] = payload.url;
-               return { ...f, thumbnails: newThumbs, status: 'ready' as const };
-             });
-             const updatedPageOrder = state.pageOrder.map(p => {
-                if (p.fileId === payload.fileId && p.pageIndex === payload.pageIndex) return { ...p, thumb: payload.url };
-                return p;
-             });
-             return { files: updatedFiles, pageOrder: updatedPageOrder };
-          });
-          break;
-        }
-        case 'MERGE_COMPLETE':
-          if (payload.taskType === 'extract') {
-             revokeObjectUrl(get().extractedUrl);
-             set({ extractedUrl: payload.url, isExtracting: false });
-             get().addToast('Extraction complete!', 'success');
-          } else {
-             revokeObjectUrl(get().mergedUrl);
-             set({ mergedUrl: payload.url, isSaving: false });
-             get().addToast('File ready!', 'success');
-          }
-          break;
-        case 'ERROR':
-          console.error('Worker Error:', payload);
-          set({ isSaving: false, isExtracting: false });
-          get().addToast(`Error: ${payload}`, 'error');
-          break;
+          return { files: updatedFiles, pageOrder: newPageOrder };
+        });
+        break;
       }
-    };
 
-    worker.onerror = (event) => {
-      console.error('Worker Runtime Error:', event.message);
-      set({ isSaving: false, isExtracting: false });
-      get().addToast('PDF worker failed. Start over to reset the workspace.', 'error');
-    };
+      case 'THUMBNAIL_GENERATED': {
+        const { fileId, pageIndex, blob } = response.payload;
+        const targetFile = get().files.find(file => file.id === fileId);
+        if (
+          get().parseTaskIds[fileId] !== response.taskId ||
+          !targetFile ||
+          pageIndex < 0 ||
+          pageIndex >= targetFile.pageCount
+        ) return;
 
-    worker.onmessageerror = () => {
-      set({ isSaving: false, isExtracting: false });
-      get().addToast('Could not read a response from the PDF worker.', 'error');
-    };
+        const url = pdfResourceRegistry.create(thumbnailOwner(fileId, pageIndex), blob);
+        set(current => ({
+          files: current.files.map(file => {
+            if (file.id !== fileId) return file;
+            const thumbnails = [...file.thumbnails];
+            thumbnails[pageIndex] = url;
+            return { ...file, thumbnails, status: 'ready' as const };
+          }),
+          pageOrder: current.pageOrder.map(page => (
+            page.fileId === fileId && page.pageIndex === pageIndex
+              ? { ...page, thumb: url }
+              : page
+          )),
+        }));
+        break;
+      }
 
-    set({ worker });
-  },
+      case 'TASK_COMPLETED': {
+        if (response.payload.operation !== 'parse') return;
+        const fileId = Object.entries(get().parseTaskIds)
+          .find(([, taskId]) => taskId === response.taskId)?.[0];
+        if (!fileId || !get().files.some(file => file.id === fileId)) return;
+        set(current => ({
+          files: current.files.map(file => file.id === fileId
+            ? { ...file, status: 'ready' as const }
+            : file),
+          parseTaskIds: Object.fromEntries(
+            Object.entries(current.parseTaskIds).filter(([id]) => id !== fileId),
+          ),
+        }));
+        break;
+      }
 
-  addToast: (message, type = 'info') => {
-    const id = generateId();
-    set(state => ({ toasts: [...state.toasts, { id, message, type }] }));
-    setTimeout(() => get().removeToast(id), 4000);
-  },
+      case 'OUTPUT_READY': {
+        const { operation, blob } = response.payload;
+        if (operation === 'extract') {
+          if (get().extractTaskId !== response.taskId) return;
+          const url = pdfResourceRegistry.create(EXTRACTED_OUTPUT_OWNER, blob);
+          set({ extractedUrl: url, isExtracting: false, extractTaskId: null });
+          get().addToast('Extraction complete!', 'success');
+        } else {
+          if (get().saveTaskId !== response.taskId) return;
+          const url = pdfResourceRegistry.create(MERGED_OUTPUT_OWNER, blob);
+          set({ mergedUrl: url, isSaving: false, saveTaskId: null });
+          get().addToast('File ready!', 'success');
+        }
+        break;
+      }
 
-  removeToast: (id) => set(state => ({ toasts: state.toasts.filter(t => t.id !== id) })),
+      case 'TASK_CANCELLED': {
+        const parseFileId = Object.entries(get().parseTaskIds)
+          .find(([, taskId]) => taskId === response.taskId)?.[0];
+        if (parseFileId) {
+          set(current => ({
+            parseTaskIds: Object.fromEntries(
+              Object.entries(current.parseTaskIds).filter(([id]) => id !== parseFileId),
+            ),
+          }));
+        }
+        if (get().saveTaskId === response.taskId) set({ isSaving: false, saveTaskId: null });
+        if (get().extractTaskId === response.taskId) set({ isExtracting: false, extractTaskId: null });
+        break;
+      }
 
-  resetAll: () => {
-    const { files, mergedUrl, extractedUrl, worker } = get();
-    worker?.terminate();
-    files.forEach(f => f.thumbnails.forEach(revokeObjectUrl));
-    revokeObjectUrl(mergedUrl);
-    revokeObjectUrl(extractedUrl);
+      case 'TASK_ERROR': {
+        const parseFileId = Object.entries(get().parseTaskIds)
+          .find(([, taskId]) => taskId === response.taskId)?.[0];
+        if (parseFileId) {
+          const file = get().files.find(item => item.id === parseFileId);
+          const removedPageIds = new Set(
+            get().pageOrder
+              .filter(page => page.fileId === parseFileId)
+              .map(page => page.uniqueId),
+          );
+          pdfResourceRegistry.releaseFile(parseFileId, file?.thumbnails ?? []);
+          set(current => ({
+            files: current.files.map(item => item.id === parseFileId
+              ? { ...item, pageCount: 0, thumbnails: [], status: 'error' as const }
+              : item),
+            pageOrder: current.pageOrder.filter(page => page.fileId !== parseFileId),
+            selectedPageIds: current.selectedPageIds.filter(id => !removedPageIds.has(id)),
+            parseTaskIds: Object.fromEntries(
+              Object.entries(current.parseTaskIds).filter(([id]) => id !== parseFileId),
+            ),
+          }));
+          get().addToast(`Error: ${response.payload.userMessage}`, 'error');
+        } else if (get().saveTaskId === response.taskId) {
+          set({ isSaving: false, saveTaskId: null });
+          get().addToast(`Error: ${response.payload.userMessage}`, 'error');
+        } else if (get().extractTaskId === response.taskId) {
+          set({ isExtracting: false, extractTaskId: null });
+          get().addToast(`Error: ${response.payload.userMessage}`, 'error');
+        }
+        break;
+      }
 
-    set({
-      files: [],
-      pageOrder: [],
-      selectedPageIds: [],
-      currentPage: 1,
-      worker: null,
-      mergedUrl: null,
-      extractedUrl: null,
-      isSaving: false,
-      isExtracting: false,
-      history: { past: [], future: [] }
-    });
-    get().initWorker();
-    get().addToast('Reset complete', 'info');
-  },
-
-  undo: () => {
-    const { history, mergedUrl } = get();
-    if (history.past.length === 0) return;
-    revokeObjectUrl(mergedUrl);
-
-    set(state => {
-      const previous = state.history.past[state.history.past.length - 1];
-      const newPast = state.history.past.slice(0, state.history.past.length - 1);
-      get().addToast('Undo', 'info');
-      
-      const validSelection = state.selectedPageIds.filter(id => previous.some(p => p.uniqueId === id));
-
-      return { 
-        pageOrder: previous, 
-        selectedPageIds: validSelection,
-        mergedUrl: null, 
-        history: { past: newPast, future: [state.pageOrder, ...state.history.future] } 
-      };
-    });
-  },
-
-  redo: () => {
-    const { history, mergedUrl } = get();
-    if (history.future.length === 0) return;
-    revokeObjectUrl(mergedUrl);
-
-    set(state => {
-      const next = state.history.future[0];
-      const newFuture = state.history.future.slice(1);
-      get().addToast('Redo', 'info');
-      
-      const validSelection = state.selectedPageIds.filter(id => next.some(p => p.uniqueId === id));
-
-      return { 
-        pageOrder: next, 
-        selectedPageIds: validSelection,
-        mergedUrl: null,
-        history: { past: [...state.history.past, state.pageOrder], future: newFuture } 
-      };
-    });
-  },
-
-  addFiles: (newFiles) => {
-    if (newFiles.length === 0) return;
-    if (!get().worker) get().initWorker();
-    const worker = get().worker;
-    revokeObjectUrl(get().mergedUrl);
-
-    const newEntries: PdfFile[] = newFiles.map(f => ({
-      id: generateId(),
-      file: f,
-      name: f.name,
-      size: (f.size / 1024 / 1024).toFixed(2) + ' MB',
-      pageCount: 0,
-      thumbnails: [],
-      status: 'processing',
-      type: f.type.startsWith('image/') ? 'image' : 'pdf'
-    }));
-    set(state => {
-      const changes: Partial<PdfStore> = { 
-          files: [...state.files, ...newEntries], 
-          currentPage: state.currentPage === 1 ? 2 : state.currentPage,
-          mergedUrl: null
-      };
-      if (state.currentPage === 3) changes.history = { past: [...state.history.past, state.pageOrder], future: [] };
-      return changes;
-    });
-    newEntries.forEach(entry => worker?.postMessage({ type: 'PARSE_FILE', payload: { file: entry.file, fileId: entry.id } }));
-    get().addToast(`${newEntries.length} files added`, 'success');
-  },
-
-  removeFile: (id) => {
-    const file = get().files.find(f => f.id === id);
-    if (!file) return;
-
-    file.thumbnails.forEach(revokeObjectUrl);
-    revokeObjectUrl(get().mergedUrl);
-
-    set(state => {
-      const removedPageIds = new Set(
-        state.pageOrder.filter(page => page.fileId === id).map(page => page.uniqueId)
-      );
-      return {
-        files: state.files.filter(f => f.id !== id),
-        pageOrder: state.pageOrder.filter(page => page.fileId !== id),
-        selectedPageIds: state.selectedPageIds.filter(pageId => !removedPageIds.has(pageId)),
-        mergedUrl: null,
-        history: { past: [], future: [] }
-      };
-    });
-  },
-  
-  reorderFiles: (activeId, overId) => {
-    const state = get();
-    const oldIndex = state.files.findIndex(f => f.id === activeId);
-    const newIndex = state.files.findIndex(f => f.id === overId);
-    if (oldIndex === -1 || newIndex === -1 || oldIndex === newIndex) return;
-
-    revokeObjectUrl(state.mergedUrl);
-    set(current => ({
-      files: arrayMove(current.files, oldIndex, newIndex),
-      mergedUrl: null
-    }));
-  },
-  
-  setPage: (page) => {
-    const { currentPage, mergedUrl } = get();
-    if (page === currentPage) return;
-    revokeObjectUrl(mergedUrl);
-    set({ currentPage: page, mergedUrl: null });
-  },
-
-  updateFileStatus: (id, updates) => set(state => ({ files: state.files.map(f => f.id === id ? { ...f, ...updates } : f) })),
-
-  addThumbnail: (id, index, url) => {
-    const targetFile = get().files.find(file => file.id === id);
-    if (!targetFile) {
-      revokeObjectUrl(url);
-      return;
+      case 'TASK_PROGRESS':
+        break;
     }
+  };
 
-    const previousUrl = targetFile.thumbnails[index];
-    if (previousUrl && previousUrl !== url) revokeObjectUrl(previousUrl);
-    set(state => ({ files: state.files.map(f => { if (f.id !== id) return f; const newThumbs = [...f.thumbnails]; newThumbs[index] = url; return { ...f, thumbnails: newThumbs, status: 'ready' }; }) }));
-  },
-  
-  initPageEditor: () => {
-    const { files, mergedUrl } = get();
-    if (files.length === 0) return;
+  const handleWorkerError = (client: PdfWorkerClient, error: PdfDomainError) => {
+    if (get().workerClient !== client) return;
+    set({ isSaving: false, isExtracting: false, saveTaskId: null, extractTaskId: null });
+    get().addToast(error.userMessage, 'error');
+  };
 
-    revokeObjectUrl(mergedUrl);
-    const pages: PageItem[] = [];
-    files.forEach(file => {
-      file.thumbnails.forEach((thumb, index) => {
-        pages.push({ uniqueId: generateId(), fileId: file.id, pageIndex: index, thumb: thumb, rotation: 0 });
+  const initialState: Omit<PdfStore, 'initWorker' | 'restartWorker' | 'resetAll' | 'addFiles' | 'removeFile' | 'reorderFiles' | 'setPage' | 'updateFileStatus' | 'addThumbnail' | 'initPageEditor' | 'reorderPages' | 'moveSelectedPages' | 'rotatePage' | 'removePage' | 'togglePageSelection' | 'setPageSelection' | 'selectAllPages' | 'deselectAllPages' | 'rotateSelectedPages' | 'removeSelectedPages' | 'extractSelectedPages' | 'undo' | 'redo' | 'mergeFiles' | 'mergePages' | 'setMergedUrl' | 'addToast' | 'removeToast'> = {
+    files: [],
+    pageOrder: [],
+    selectedPageIds: [],
+    currentPage: 1,
+    worker: null,
+    workerClient: null,
+    sessionId: null,
+    parseTaskIds: {},
+    saveTaskId: null,
+    extractTaskId: null,
+    mergedUrl: null,
+    extractedUrl: null,
+    isSaving: false,
+    isExtracting: false,
+    history: { past: [], future: [] },
+    toasts: [],
+  };
+
+  return {
+    ...initialState,
+
+    initWorker: () => {
+      if (get().workerClient) return;
+      let client: PdfWorkerClient | null = null;
+      try {
+        client = new PdfWorkerClient({
+          onResponse: response => {
+            if (client) handleWorkerResponse(client, response);
+          },
+          onError: error => {
+            if (client) handleWorkerError(client, error);
+          },
+          onRestart: (worker, sessionId) => {
+            if (client && get().workerClient === client) {
+              set({
+                worker,
+                sessionId,
+                parseTaskIds: {},
+                saveTaskId: null,
+                extractTaskId: null,
+                isSaving: false,
+                isExtracting: false,
+              });
+            }
+          },
+        });
+        set({ workerClient: client, worker: client.worker, sessionId: client.sessionId });
+      } catch (error) {
+        const domainError = error instanceof PdfDomainError
+          ? error
+          : new PdfDomainError('WORKER_INITIALIZATION_FAILED', 'Could not start the PDF engine.', error);
+        get().addToast(domainError.userMessage, 'error');
+      }
+    },
+
+    restartWorker: () => {
+      const client = get().workerClient;
+      if (client) {
+        client.restart();
+        return;
+      }
+      set({ worker: null });
+      get().initWorker();
+    },
+
+    resetAll: () => {
+      const state = get();
+      state.workerClient?.dispose();
+      if (!state.workerClient) state.worker?.terminate();
+      pdfResourceRegistry.releaseAll([
+        ...thumbnailUrls(state.files),
+        state.mergedUrl,
+        state.extractedUrl,
+      ]);
+      set({
+        files: [],
+        pageOrder: [],
+        selectedPageIds: [],
+        currentPage: 1,
+        worker: null,
+        workerClient: null,
+        sessionId: null,
+        parseTaskIds: {},
+        saveTaskId: null,
+        extractTaskId: null,
+        mergedUrl: null,
+        extractedUrl: null,
+        isSaving: false,
+        isExtracting: false,
+        history: { past: [], future: [] },
       });
-    });
-    set({ pageOrder: pages, selectedPageIds: [], currentPage: 3, mergedUrl: null, history: { past: [], future: [] } });
-  },
+      get().initWorker();
+      get().addToast('Reset complete', 'info');
+    },
 
-  reorderPages: (activeId, overId) => {
-    const state = get();
-    const oldIndex = state.pageOrder.findIndex(p => p.uniqueId === activeId);
-    const newIndex = state.pageOrder.findIndex(p => p.uniqueId === overId);
-    if (oldIndex === -1 || newIndex === -1 || oldIndex === newIndex) return;
+    addToast: (message, type = 'info') => {
+      const id = generateId();
+      set(state => ({ toasts: [...state.toasts, { id, message, type }] }));
+      setTimeout(() => get().removeToast(id), 4000);
+    },
 
-    revokeObjectUrl(state.mergedUrl);
-    set(current => ({ 
-      history: { past: [...current.history.past, current.pageOrder], future: [] }, 
-      pageOrder: arrayMove(current.pageOrder, oldIndex, newIndex),
-      mergedUrl: null 
-    }));
-  },
+    removeToast: id => set(state => ({ toasts: state.toasts.filter(toast => toast.id !== id) })),
 
-  moveSelectedPages: (activeId, overId) => {
-    const state = get();
-    const activeIndex = state.pageOrder.findIndex(p => p.uniqueId === activeId);
-    const overIndex = state.pageOrder.findIndex(p => p.uniqueId === overId);
-    if (activeIndex === -1 || overIndex === -1 || activeIndex === overIndex) return;
-    if (state.selectedPageIds.includes(overId)) return;
+    undo: () => {
+      const { history } = get();
+      if (history.past.length === 0) return;
+      invalidateMergedOutput();
+      set(state => {
+        const previous = state.history.past[state.history.past.length - 1];
+        const validSelection = state.selectedPageIds.filter(id => previous.some(page => page.uniqueId === id));
+        return {
+          pageOrder: previous,
+          selectedPageIds: validSelection,
+          history: { past: state.history.past.slice(0, -1), future: [state.pageOrder, ...state.history.future] },
+        };
+      });
+      get().addToast('Undo', 'info');
+    },
 
-    const selectedIds = new Set(state.selectedPageIds);
-    const itemsToMove = state.pageOrder.filter(p => selectedIds.has(p.uniqueId));
-    if (itemsToMove.length === 0) return;
+    redo: () => {
+      const { history } = get();
+      if (history.future.length === 0) return;
+      invalidateMergedOutput();
+      set(state => {
+        const next = state.history.future[0];
+        const validSelection = state.selectedPageIds.filter(id => next.some(page => page.uniqueId === id));
+        return {
+          pageOrder: next,
+          selectedPageIds: validSelection,
+          history: { past: [...state.history.past, state.pageOrder], future: state.history.future.slice(1) },
+        };
+      });
+      get().addToast('Redo', 'info');
+    },
 
-    const itemsStaying = state.pageOrder.filter(p => !selectedIds.has(p.uniqueId));
-    let insertAtIndex = itemsStaying.findIndex(p => p.uniqueId === overId);
-    if (insertAtIndex === -1) return;
-    if (activeIndex < overIndex) insertAtIndex += 1;
+    addFiles: newFiles => {
+      if (newFiles.length === 0) return;
+      if (!get().workerClient) get().initWorker();
+      const client = get().workerClient;
+      if (!client) return;
 
-    revokeObjectUrl(state.mergedUrl);
-    const newOrder = [...itemsStaying];
-    newOrder.splice(insertAtIndex, 0, ...itemsToMove);
-    set(current => ({ 
-      history: { past: [...current.history.past, current.pageOrder], future: [] }, 
-      pageOrder: newOrder,
-      mergedUrl: null 
-    }));
-  },
+      invalidateMergedOutput();
+      const newEntries: PdfFile[] = newFiles.map(file => ({
+        id: generateId(),
+        file,
+        name: file.name,
+        size: `${(file.size / 1024 / 1024).toFixed(2)} MB`,
+        pageCount: 0,
+        thumbnails: [],
+        status: 'processing',
+        type: file.type.startsWith('image/') ? 'image' : 'pdf',
+      }));
+      set(state => {
+        const changes: Partial<PdfStore> = {
+          files: [...state.files, ...newEntries],
+          currentPage: state.currentPage === 1 ? 2 : state.currentPage,
+          mergedUrl: null,
+        };
+        if (state.currentPage === 3) {
+          changes.history = { past: [...state.history.past, state.pageOrder], future: [] };
+        }
+        return changes;
+      });
 
-  rotatePage: (uniqueId) => {
-    const state = get();
-    if (!state.pageOrder.some(page => page.uniqueId === uniqueId)) return;
+      const parseTaskIds: Record<string, string> = {};
+      for (const entry of newEntries) {
+        parseTaskIds[entry.id] = client.parseFile(entry.id, entry.file).taskId;
+      }
+      set(state => ({ parseTaskIds: { ...state.parseTaskIds, ...parseTaskIds } }));
+      get().addToast(`${newEntries.length} files added`, 'success');
+    },
 
-    revokeObjectUrl(state.mergedUrl);
-    set(current => ({ 
-      history: { past: [...current.history.past, current.pageOrder], future: [] },
-      pageOrder: current.pageOrder.map(p => p.uniqueId === uniqueId ? { ...p, rotation: (p.rotation + 90) % 360 } : p),
-      mergedUrl: null 
-    }));
-  },
+    removeFile: id => {
+      const file = get().files.find(item => item.id === id);
+      if (!file) return;
+      const { workerClient, parseTaskIds, extractTaskId } = get();
+      const parseTaskId = parseTaskIds[id];
+      if (parseTaskId) workerClient?.cancel(parseTaskId);
+      if (extractTaskId) workerClient?.cancel(extractTaskId);
+      invalidateMergedOutput();
+      pdfResourceRegistry.releaseFile(id, file.thumbnails);
 
-  removePage: (uniqueId) => {
-    const state = get();
-    if (!state.pageOrder.some(page => page.uniqueId === uniqueId)) return;
+      set(state => {
+        const removedPageIds = new Set(
+          state.pageOrder.filter(page => page.fileId === id).map(page => page.uniqueId),
+        );
+        return {
+          files: state.files.filter(item => item.id !== id),
+          pageOrder: state.pageOrder.filter(page => page.fileId !== id),
+          selectedPageIds: state.selectedPageIds.filter(pageId => !removedPageIds.has(pageId)),
+          parseTaskIds: Object.fromEntries(Object.entries(state.parseTaskIds).filter(([fileId]) => fileId !== id)),
+          isExtracting: extractTaskId ? false : state.isExtracting,
+          extractTaskId: extractTaskId ? null : state.extractTaskId,
+          history: { past: [], future: [] },
+        };
+      });
+    },
 
-    revokeObjectUrl(state.mergedUrl);
-    set(current => ({ 
-      history: { past: [...current.history.past, current.pageOrder], future: [] },
-      pageOrder: current.pageOrder.filter(p => p.uniqueId !== uniqueId), 
-      selectedPageIds: current.selectedPageIds.filter(id => id !== uniqueId),
-      mergedUrl: null 
-    }));
-  },
-  
-  rotateSelectedPages: () => {
-    const state = get();
-    if (state.selectedPageIds.length === 0) return;
+    reorderFiles: (activeId, overId) => {
+      const state = get();
+      const oldIndex = state.files.findIndex(file => file.id === activeId);
+      const newIndex = state.files.findIndex(file => file.id === overId);
+      if (oldIndex === -1 || newIndex === -1 || oldIndex === newIndex) return;
+      invalidateMergedOutput();
+      set(current => ({ files: arrayMove(current.files, oldIndex, newIndex) }));
+    },
 
-    revokeObjectUrl(state.mergedUrl);
-    const selectedIds = new Set(state.selectedPageIds);
-    set(current => ({ 
-      history: { past: [...current.history.past, current.pageOrder], future: [] },
-      pageOrder: current.pageOrder.map(p => selectedIds.has(p.uniqueId) ? { ...p, rotation: (p.rotation + 90) % 360 } : p),
-      mergedUrl: null 
-    }));
-    get().addToast('Rotated selected pages', 'success');
-  },
-  
-  removeSelectedPages: () => {
-    const state = get();
-    if (state.selectedPageIds.length === 0) return;
+    setPage: page => {
+      if (page === get().currentPage) return;
+      invalidateMergedOutput();
+      set({ currentPage: page });
+    },
 
-    revokeObjectUrl(state.mergedUrl);
-    const selectedIds = new Set(state.selectedPageIds);
-    set(current => ({ 
-      history: { past: [...current.history.past, current.pageOrder], future: [] },
-      pageOrder: current.pageOrder.filter(p => !selectedIds.has(p.uniqueId)), 
-      selectedPageIds: [],
-      mergedUrl: null 
-    }));
-    get().addToast('Removed selected pages', 'success');
-  },
+    updateFileStatus: (id, updates) => set(state => ({
+      files: state.files.map(file => file.id === id ? { ...file, ...updates } : file),
+    })),
 
-  togglePageSelection: (uniqueId) => set(state => { 
-    const isSelected = state.selectedPageIds.includes(uniqueId); 
-    return { selectedPageIds: isSelected ? state.selectedPageIds.filter(id => id !== uniqueId) : [...state.selectedPageIds, uniqueId] }; 
-  }),
-  
-  setPageSelection: (ids) => set({ selectedPageIds: ids }),
+    addThumbnail: (id, index, url) => {
+      const targetFile = get().files.find(file => file.id === id);
+      if (!targetFile) {
+        pdfResourceRegistry.release(thumbnailOwner(id, index), [url]);
+        return;
+      }
+      const owner = thumbnailOwner(id, index);
+      pdfResourceRegistry.release(owner, [targetFile.thumbnails[index]]);
+      if (url) pdfResourceRegistry.adopt(owner, url);
+      set(state => ({
+        files: state.files.map(file => {
+          if (file.id !== id) return file;
+          const thumbnails = [...file.thumbnails];
+          thumbnails[index] = url;
+          return { ...file, thumbnails, status: 'ready' as const };
+        }),
+      }));
+    },
 
-  selectAllPages: () => set(state => ({ selectedPageIds: state.pageOrder.map(p => p.uniqueId) })),
-  deselectAllPages: () => set({ selectedPageIds: [] }),
-  
-  extractSelectedPages: () => {
-    const { worker, files, pageOrder, selectedPageIds } = get();
-    if (!worker || selectedPageIds.length === 0 || get().isExtracting) return;
-    const selectedIds = new Set(selectedPageIds);
-    const pagesToExtract = pageOrder.filter(p => selectedIds.has(p.uniqueId));
-    
-    set({ isExtracting: true }); 
-    worker.postMessage({ 
-        type: 'MERGE_PAGES', 
-        payload: { 
-            files: files.map(f => ({ id: f.id, file: f.file })), 
-            pages: pagesToExtract,
-            taskType: 'extract' 
-        } 
-    });
-    get().addToast('Extracting pages...', 'info');
-  },
+    initPageEditor: () => {
+      const { files } = get();
+      if (files.length === 0) return;
+      invalidateMergedOutput();
+      const pages: PageItem[] = [];
+      files.forEach(file => file.thumbnails.forEach((thumb, pageIndex) => {
+        pages.push({ uniqueId: generateId(), fileId: file.id, pageIndex, thumb, rotation: 0 });
+      }));
+      set({ pageOrder: pages, selectedPageIds: [], currentPage: 3, history: { past: [], future: [] } });
+    },
 
-  mergeFiles: () => { 
-      const { worker, files, isSaving } = get(); 
-      if (!worker || files.length === 0 || isSaving) return;
-      revokeObjectUrl(get().mergedUrl);
-      set({ isSaving: true, mergedUrl: null }); 
-      worker.postMessage({ type: 'MERGE_PDFS', payload: { files: files.map(f => ({ id: f.id, file: f.file })), taskType: 'save' } }); 
-  },
-  
-  mergePages: () => { 
-      const { worker, files, pageOrder, isSaving } = get(); 
-      if (!worker || pageOrder.length === 0 || isSaving) return;
-      revokeObjectUrl(get().mergedUrl);
-      set({ isSaving: true, mergedUrl: null }); 
-      worker.postMessage({ type: 'MERGE_PAGES', payload: { files: files.map(f => ({ id: f.id, file: f.file })), pages: pageOrder, taskType: 'save' } }); 
-  },
-  
-  setMergedUrl: (url) => {
-    const previousUrl = get().mergedUrl;
-    if (previousUrl && previousUrl !== url) revokeObjectUrl(previousUrl);
-    set({ mergedUrl: url });
-  }
-}));
+    reorderPages: (activeId, overId) => {
+      const state = get();
+      const oldIndex = state.pageOrder.findIndex(page => page.uniqueId === activeId);
+      const newIndex = state.pageOrder.findIndex(page => page.uniqueId === overId);
+      if (oldIndex === -1 || newIndex === -1 || oldIndex === newIndex) return;
+      invalidateMergedOutput();
+      set(current => ({
+        history: { past: [...current.history.past, current.pageOrder], future: [] },
+        pageOrder: arrayMove(current.pageOrder, oldIndex, newIndex),
+      }));
+    },
+
+    moveSelectedPages: (activeId, overId) => {
+      const state = get();
+      const activeIndex = state.pageOrder.findIndex(page => page.uniqueId === activeId);
+      const overIndex = state.pageOrder.findIndex(page => page.uniqueId === overId);
+      if (activeIndex === -1 || overIndex === -1 || activeIndex === overIndex) return;
+      if (state.selectedPageIds.includes(overId)) return;
+      const selectedIds = new Set(state.selectedPageIds);
+      const itemsToMove = state.pageOrder.filter(page => selectedIds.has(page.uniqueId));
+      if (itemsToMove.length === 0) return;
+      const itemsStaying = state.pageOrder.filter(page => !selectedIds.has(page.uniqueId));
+      let insertAtIndex = itemsStaying.findIndex(page => page.uniqueId === overId);
+      if (insertAtIndex === -1) return;
+      if (activeIndex < overIndex) insertAtIndex += 1;
+      invalidateMergedOutput();
+      const newOrder = [...itemsStaying];
+      newOrder.splice(insertAtIndex, 0, ...itemsToMove);
+      set(current => ({
+        history: { past: [...current.history.past, current.pageOrder], future: [] },
+        pageOrder: newOrder,
+      }));
+    },
+
+    rotatePage: uniqueId => {
+      if (!get().pageOrder.some(page => page.uniqueId === uniqueId)) return;
+      invalidateMergedOutput();
+      set(current => ({
+        history: { past: [...current.history.past, current.pageOrder], future: [] },
+        pageOrder: current.pageOrder.map(page => page.uniqueId === uniqueId
+          ? { ...page, rotation: (page.rotation + 90) % 360 }
+          : page),
+      }));
+    },
+
+    removePage: uniqueId => {
+      if (!get().pageOrder.some(page => page.uniqueId === uniqueId)) return;
+      invalidateMergedOutput();
+      set(current => ({
+        history: { past: [...current.history.past, current.pageOrder], future: [] },
+        pageOrder: current.pageOrder.filter(page => page.uniqueId !== uniqueId),
+        selectedPageIds: current.selectedPageIds.filter(id => id !== uniqueId),
+      }));
+    },
+
+    rotateSelectedPages: () => {
+      const selectedIds = new Set(get().selectedPageIds);
+      if (selectedIds.size === 0) return;
+      invalidateMergedOutput();
+      set(current => ({
+        history: { past: [...current.history.past, current.pageOrder], future: [] },
+        pageOrder: current.pageOrder.map(page => selectedIds.has(page.uniqueId)
+          ? { ...page, rotation: (page.rotation + 90) % 360 }
+          : page),
+      }));
+      get().addToast('Rotated selected pages', 'success');
+    },
+
+    removeSelectedPages: () => {
+      const selectedIds = new Set(get().selectedPageIds);
+      if (selectedIds.size === 0) return;
+      invalidateMergedOutput();
+      set(current => ({
+        history: { past: [...current.history.past, current.pageOrder], future: [] },
+        pageOrder: current.pageOrder.filter(page => !selectedIds.has(page.uniqueId)),
+        selectedPageIds: [],
+      }));
+      get().addToast('Removed selected pages', 'success');
+    },
+
+    togglePageSelection: uniqueId => set(state => {
+      const isSelected = state.selectedPageIds.includes(uniqueId);
+      return {
+        selectedPageIds: isSelected
+          ? state.selectedPageIds.filter(id => id !== uniqueId)
+          : [...state.selectedPageIds, uniqueId],
+      };
+    }),
+
+    setPageSelection: ids => set({ selectedPageIds: ids }),
+    selectAllPages: () => set(state => ({ selectedPageIds: state.pageOrder.map(page => page.uniqueId) })),
+    deselectAllPages: () => set({ selectedPageIds: [] }),
+
+    extractSelectedPages: () => {
+      const { workerClient, files, pageOrder, selectedPageIds, isExtracting } = get();
+      if (!workerClient || selectedPageIds.length === 0 || isExtracting) return;
+      const selectedIds = new Set(selectedPageIds);
+      const pagesToExtract = pageOrder
+        .filter(page => selectedIds.has(page.uniqueId))
+        .map(({ uniqueId, fileId, pageIndex, rotation }) => ({ uniqueId, fileId, pageIndex, rotation }));
+      if (pagesToExtract.length === 0) return;
+      releaseExtractedOutput();
+      const task = workerClient.extractPages(
+        files.map(file => ({ id: file.id, file: file.file })),
+        pagesToExtract,
+      );
+      set({ isExtracting: true, extractTaskId: task.taskId });
+      get().addToast('Extracting pages...', 'info');
+    },
+
+    mergeFiles: () => {
+      const { workerClient, files, isSaving } = get();
+      if (!workerClient || files.length === 0 || isSaving) return;
+      invalidateMergedOutput();
+      const task = workerClient.mergeFiles(files.map(file => ({ id: file.id, file: file.file })));
+      set({ isSaving: true, saveTaskId: task.taskId });
+    },
+
+    mergePages: () => {
+      const { workerClient, files, pageOrder, isSaving } = get();
+      if (!workerClient || pageOrder.length === 0 || isSaving) return;
+      invalidateMergedOutput();
+      const pages = pageOrder.map(({ uniqueId, fileId, pageIndex, rotation }) => ({ uniqueId, fileId, pageIndex, rotation }));
+      const task = workerClient.mergePages(
+        files.map(file => ({ id: file.id, file: file.file })),
+        pages,
+      );
+      set({ isSaving: true, saveTaskId: task.taskId });
+    },
+
+    setMergedUrl: url => {
+      const previousUrl = get().mergedUrl;
+      if (previousUrl === url) return;
+      pdfResourceRegistry.release(MERGED_OUTPUT_OWNER, [previousUrl]);
+      if (url) pdfResourceRegistry.adopt(MERGED_OUTPUT_OWNER, url);
+      set({ mergedUrl: url });
+    },
+  };
+});

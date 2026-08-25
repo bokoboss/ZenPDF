@@ -4,11 +4,17 @@
 
 ZenPDF is intended to process user documents locally in the browser. Application features should not upload document contents to a server unless that behavior is explicitly introduced, clearly disclosed, and separately approved.
 
-## Current limitation
+## Current runtime boundary
 
-The current application still loads some application and PDF-processing dependencies from third-party CDNs at runtime. Document contents are processed client-side, but the application is not yet fully self-contained or offline-capable.
+PDF processing is bundled locally in the application: `pdf-lib@1.17.1` handles
+output generation and `pdfjs-dist@6.2.108` handles parsing and thumbnails inside
+a Vite-bundled TypeScript module worker. The worker returns local `Blob` values;
+the application owns browser Object URLs through an explicit resource registry.
 
-The modernization roadmap tracks migration of runtime dependencies into the local application bundle.
+Document contents therefore remain local to the user's browser during the
+current PDF workflows. Tailwind's browser script and Google Fonts still have
+runtime CDN references; those UI asset dependencies are tracked separately and
+do not receive document bytes from the PDF worker.
 
 ## Secrets
 

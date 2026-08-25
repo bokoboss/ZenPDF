@@ -1,10 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { usePdfStore } from '../store';
+import { usePdfStore, pdfResourceRegistry } from '../store';
 import type { PageItem, PdfFile } from '../types';
 
 const workers: FakeWorker[] = [];
-const createObjectURL = vi.fn(() => 'blob:worker-script');
+let createObjectUrlCount = 0;
+const createObjectURL = vi.fn(() => `blob:created-${++createObjectUrlCount}`);
 const revokeObjectURL = vi.fn();
+const NativeURL = globalThis.URL;
 
 class FakeWorker {
   onmessage: ((event: MessageEvent) => void) | null = null;
@@ -13,7 +15,7 @@ class FakeWorker {
   postMessage = vi.fn();
   terminate = vi.fn();
 
-  constructor(public readonly url: string) {
+  constructor(public readonly url: unknown) {
     workers.push(this);
   }
 }
@@ -26,7 +28,7 @@ const makeFile = (id: string, thumbnails: string[] = []): PdfFile => ({
   pageCount: Math.max(1, thumbnails.length),
   thumbnails,
   status: 'ready',
-  type: 'pdf'
+  type: 'pdf',
 });
 
 const makePage = (uniqueId: string, fileId: string): PageItem => ({
@@ -34,36 +36,52 @@ const makePage = (uniqueId: string, fileId: string): PageItem => ({
   fileId,
   pageIndex: 0,
   thumb: '',
-  rotation: 0
+  rotation: 0,
 });
 
 const resetStoreState = () => {
+  usePdfStore.getState().workerClient?.dispose();
+  pdfResourceRegistry.releaseAll();
   usePdfStore.setState({
     files: [],
     pageOrder: [],
     selectedPageIds: [],
     currentPage: 1,
     worker: null,
+    workerClient: null,
+    sessionId: null,
+    parseTaskIds: {},
+    saveTaskId: null,
+    extractTaskId: null,
     mergedUrl: null,
     extractedUrl: null,
     isSaving: false,
     isExtracting: false,
     history: { past: [], future: [] },
-    toasts: []
+    toasts: [],
   });
 };
+
+function dispatch(worker: FakeWorker, data: unknown) {
+  worker.onmessage?.({ data } as MessageEvent);
+}
 
 describe('PDF store lifecycle hardening', () => {
   beforeEach(() => {
     workers.length = 0;
+    createObjectUrlCount = 0;
     vi.clearAllMocks();
     vi.useFakeTimers();
     vi.stubGlobal('Worker', FakeWorker);
-    vi.stubGlobal('URL', { createObjectURL, revokeObjectURL });
+    const TestURL = class extends NativeURL {};
+    TestURL.createObjectURL = createObjectURL;
+    TestURL.revokeObjectURL = revokeObjectURL;
+    vi.stubGlobal('URL', TestURL);
     resetStoreState();
   });
 
   afterEach(() => {
+    usePdfStore.getState().workerClient?.dispose();
     vi.runOnlyPendingTimers();
     vi.useRealTimers();
     vi.unstubAllGlobals();
@@ -80,7 +98,7 @@ describe('PDF store lifecycle hardening', () => {
   it('preserves a generated output when an invalid file reorder is a no-op', () => {
     usePdfStore.setState({
       files: [makeFile('a'), makeFile('b')],
-      mergedUrl: 'blob:valid-output'
+      mergedUrl: 'blob:valid-output',
     });
 
     usePdfStore.getState().reorderFiles('a', 'missing');
@@ -92,7 +110,7 @@ describe('PDF store lifecycle hardening', () => {
   it('preserves a generated output when undo and redo have no available history', () => {
     usePdfStore.setState({
       mergedUrl: 'blob:valid-output',
-      history: { past: [], future: [] }
+      history: { past: [], future: [] },
     });
 
     usePdfStore.getState().undo();
@@ -107,7 +125,7 @@ describe('PDF store lifecycle hardening', () => {
     usePdfStore.setState({
       pageOrder: [page],
       selectedPageIds: [],
-      mergedUrl: 'blob:valid-output'
+      mergedUrl: 'blob:valid-output',
     });
 
     usePdfStore.getState().rotatePage('missing-page');
@@ -127,7 +145,7 @@ describe('PDF store lifecycle hardening', () => {
       pageOrder: [page],
       selectedPageIds: ['page-a'],
       mergedUrl: 'blob:merged-old',
-      history: { past: [[page]], future: [[page]] }
+      history: { past: [[page]], future: [[page]] },
     });
 
     usePdfStore.getState().removeFile('a');
@@ -143,13 +161,13 @@ describe('PDF store lifecycle hardening', () => {
   });
 
   it('terminates the active worker and starts a clean worker on reset', () => {
-    const existingWorker = new FakeWorker('blob:existing-worker');
+    const existingWorker = new FakeWorker('existing-worker');
     usePdfStore.setState({
       worker: existingWorker as unknown as Worker,
       files: [makeFile('a', ['blob:thumb-a'])],
       mergedUrl: 'blob:merged-old',
       extractedUrl: 'blob:extract-old',
-      currentPage: 3
+      currentPage: 3,
     });
 
     usePdfStore.getState().resetAll();
@@ -168,49 +186,134 @@ describe('PDF store lifecycle hardening', () => {
     expect(revokeObjectURL).toHaveBeenCalledWith('blob:extract-old');
   });
 
-  it('releases a thumbnail response for a file that no longer exists', () => {
-    usePdfStore.getState().initWorker();
-    const worker = workers[0];
+  it('ignores a parse response captured before reset', () => {
+    const input = new File(['%PDF-1.7'], 'document.pdf', { type: 'application/pdf' });
+    usePdfStore.getState().addFiles([input]);
+    const beforeReset = usePdfStore.getState();
+    const oldWorker = workers[0];
+    const oldOnMessage = oldWorker.onmessage;
+    const oldTaskId = beforeReset.parseTaskIds[beforeReset.files[0].id];
+    const oldSessionId = beforeReset.sessionId;
 
-    worker.onmessage?.({
+    usePdfStore.getState().resetAll();
+    oldOnMessage?.({
       data: {
-        type: 'THUMBNAIL_GENERATED',
-        payload: { fileId: 'removed-file', pageIndex: 0, url: 'blob:stale-thumb' }
-      }
+        type: 'FILE_PARSED',
+        sessionId: oldSessionId,
+        taskId: oldTaskId,
+        payload: { fileId: beforeReset.files[0].id, pageCount: 99 },
+      },
     } as MessageEvent);
 
     expect(usePdfStore.getState().files).toEqual([]);
-    expect(revokeObjectURL).toHaveBeenCalledWith('blob:stale-thumb');
+    expect(usePdfStore.getState().sessionId).not.toBe(oldSessionId);
+    expect(createObjectURL).not.toHaveBeenCalled();
   });
 
-  it('does not repopulate editor pages from a parsed response for a removed file', () => {
-    usePdfStore.setState({ currentPage: 3 });
+  it('ignores an output response captured before reset', () => {
     usePdfStore.getState().initWorker();
-    const worker = workers[0];
+    const oldWorker = workers[0];
+    const oldOnMessage = oldWorker.onmessage;
+    const file = makeFile('a');
+    const page = makePage('page-a', 'a');
+    usePdfStore.setState({ files: [file], pageOrder: [page] });
+    usePdfStore.getState().mergePages();
 
-    worker.onmessage?.({
+    const beforeReset = usePdfStore.getState();
+    const oldTaskId = beforeReset.saveTaskId;
+    const oldSessionId = beforeReset.sessionId;
+    usePdfStore.getState().resetAll();
+    oldOnMessage?.({
       data: {
-        type: 'FILE_PARSED',
-        payload: { fileId: 'removed-file', pageCount: 25 }
-      }
+        type: 'OUTPUT_READY',
+        sessionId: oldSessionId,
+        taskId: oldTaskId,
+        payload: { operation: 'merge', blob: new Blob(['stale']) },
+      },
     } as MessageEvent);
 
-    expect(usePdfStore.getState().pageOrder).toEqual([]);
+    expect(usePdfStore.getState().mergedUrl).toBeNull();
+    expect(createObjectURL).not.toHaveBeenCalled();
   });
 
-  it('invalidates an existing generated output when page content changes', () => {
-    const page = makePage('page-a', 'a');
-    usePdfStore.setState({
-      pageOrder: [page],
-      mergedUrl: 'blob:generated-output'
+  it('accepts a current typed parse response and owns the generated thumbnail URL', () => {
+    const input = new File(['%PDF-1.7'], 'document.pdf', { type: 'application/pdf' });
+    usePdfStore.getState().addFiles([input]);
+    const state = usePdfStore.getState();
+    const entry = state.files[0];
+    const worker = workers[0];
+    const taskId = state.parseTaskIds[entry.id];
+
+    dispatch(worker, {
+      type: 'FILE_PARSED',
+      sessionId: state.sessionId,
+      taskId,
+      payload: { fileId: entry.id, pageCount: 1 },
+    });
+    dispatch(worker, {
+      type: 'THUMBNAIL_GENERATED',
+      sessionId: state.sessionId,
+      taskId,
+      payload: { fileId: entry.id, pageIndex: 0, blob: new Blob(['thumb']) },
+    });
+    dispatch(worker, {
+      type: 'TASK_COMPLETED',
+      sessionId: state.sessionId,
+      taskId,
+      payload: { operation: 'parse' },
     });
 
-    usePdfStore.getState().rotatePage('page-a');
+    const result = usePdfStore.getState();
+    expect(result.files[0]?.pageCount).toBe(1);
+    expect(result.files[0]?.status).toBe('ready');
+    expect(result.files[0]?.thumbnails[0]).toBe('blob:created-1');
+    expect(pdfResourceRegistry.ownedUrlCount()).toBe(1);
+  });
 
+  it('ignores stale session responses before creating any object URL', () => {
+    const input = new File(['%PDF-1.7'], 'document.pdf', { type: 'application/pdf' });
+    usePdfStore.getState().addFiles([input]);
     const state = usePdfStore.getState();
-    expect(state.mergedUrl).toBeNull();
-    expect(state.pageOrder[0]?.rotation).toBe(90);
-    expect(revokeObjectURL).toHaveBeenCalledWith('blob:generated-output');
+    const entry = state.files[0];
+    const worker = workers[0];
+    const taskId = state.parseTaskIds[entry.id];
+
+    dispatch(worker, {
+      type: 'THUMBNAIL_GENERATED',
+      sessionId: 'stale-session',
+      taskId,
+      payload: { fileId: entry.id, pageIndex: 0, blob: new Blob(['stale']) },
+    });
+
+    expect(usePdfStore.getState().files[0]?.thumbnails).toEqual([]);
+    expect(createObjectURL).not.toHaveBeenCalled();
+  });
+
+  it('rejects a late response for a removed file without restoring state', () => {
+    const input = new File(['%PDF-1.7'], 'document.pdf', { type: 'application/pdf' });
+    usePdfStore.getState().addFiles([input]);
+    const state = usePdfStore.getState();
+    const entry = state.files[0];
+    const worker = workers[0];
+    const taskId = state.parseTaskIds[entry.id];
+
+    usePdfStore.getState().removeFile(entry.id);
+    dispatch(worker, {
+      type: 'FILE_PARSED',
+      sessionId: state.sessionId,
+      taskId,
+      payload: { fileId: entry.id, pageCount: 20 },
+    });
+    dispatch(worker, {
+      type: 'THUMBNAIL_GENERATED',
+      sessionId: state.sessionId,
+      taskId,
+      payload: { fileId: entry.id, pageIndex: 0, blob: new Blob(['stale']) },
+    });
+
+    expect(usePdfStore.getState().files).toEqual([]);
+    expect(usePdfStore.getState().pageOrder).toEqual([]);
+    expect(createObjectURL).not.toHaveBeenCalled();
   });
 
   it('does not dispatch a second save while a save is already active', () => {
@@ -219,7 +322,8 @@ describe('PDF store lifecycle hardening', () => {
     usePdfStore.setState({
       files: [makeFile('a')],
       pageOrder: [makePage('page-a', 'a')],
-      isSaving: true
+      isSaving: true,
+      saveTaskId: 'existing-task',
     });
 
     usePdfStore.getState().mergePages();

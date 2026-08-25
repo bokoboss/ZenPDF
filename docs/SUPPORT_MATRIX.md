@@ -57,10 +57,10 @@ Performance values are reference measurements from one GitHub-hosted runner clas
 
 | Case | Current status | Notes |
 |---|---|---|
-| Password-protected/encrypted PDF | Not supported as a user workflow | No password prompt/decryption workflow exists. Stable error classification is a Phase 1 requirement. |
+| Password-protected/encrypted PDF | Recoverable rejection; not supported as a user workflow | The typed worker classifies password/encryption errors. No password prompt/decryption workflow exists. |
 | Add password protection | Not supported | Candidate Phase 4 feature. |
 | Remove password with known password | Not supported | No password workflow exists. |
-| Corrupt/malformed PDF | Recoverable at application level; recovery UX incomplete | Chromium E2E verifies an invalid PDF produces an error while Documents/Add File remain usable. Per-file typed error state is Phase 1 work. |
+| Corrupt/malformed PDF | Recoverable at application level | Chromium E2E verifies an invalid PDF produces a typed error while Documents/Add File remain usable. |
 
 ## Privacy / connectivity
 
@@ -68,7 +68,7 @@ Performance values are reference measurements from one GitHub-hosted runner clas
 |---|---|---|
 | Document processing on application server | Not used | Core document processing occurs in the browser. |
 | Document upload required | No | The application does not require an app-server upload for current PDF operations. |
-| Fully offline/self-contained runtime | Not yet | Tailwind, Google Fonts, PDF.js, and pdf-lib still have runtime CDN dependencies in the current engine/UI setup. |
+| Fully offline/self-contained runtime | Not yet | PDF.js and pdf-lib are bundled locally in the Phase 1 worker. Tailwind and Google Fonts still have runtime CDN dependencies. |
 | API key required | No | Obsolete Gemini/API-key scaffold has been removed. |
 
 ## Browsers
@@ -77,7 +77,7 @@ Current automated browser qualification is Chromium-based. Other modern browsers
 
 ## Current automated qualification
 
-The Phase 0 branch currently validates:
+The Phase 1 branch currently validates:
 
 - deterministic `npm ci`
 - strict TypeScript
@@ -91,6 +91,7 @@ The Phase 0 branch currently validates:
 - source + editor rotation composition
 - real selected-page extraction output
 - malformed-PDF recoverability
+- typed worker session/task isolation, cancellation, restart, and resource cleanup
 - actionable browser console errors during supported flows
 - desktop/mobile visual baseline screenshots captured as a CI artifact
 - repeatable 100-page and 500-page performance baseline artifacts

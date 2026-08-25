@@ -9,9 +9,9 @@
 
 ## Current accepted baseline
 - Accepted branch: `main`
-- Accepted HEAD SHA: `99b2518db056478a02ae79b4a12b2ac25c707993`
+- Accepted HEAD SHA: `086680e114aeb4265ce47b9f987fb669f9d0cad2`
 - Accepted date: 2026-08-25 (`main` commit date)
-- Current phase/milestone: Phase 0 foundation hardening is complete and accepted; workflow adoption is being reconciled separately
+- Current phase/milestone: Phase 0 foundation hardening is accepted; Issue #3 / Phase 1A is implemented on the isolated review branch
 - Last accepted PR / CI run: PR #1 was squash-merged according to the task context; CI run identifier was not verified locally
 
 ## Technology stack
@@ -53,8 +53,8 @@ npm run check
 
 ## Architecture / invariants
 - ZenPDF is a browser-only React/Vite application; document processing remains local in the browser.
-- The current PDF runtime uses the legacy stringified `workerCode.ts` Blob worker until Issue #3.
-- The current worker still loads PDF.js and pdf-lib from runtime CDNs; local typed worker migration is Issue #3 scope.
+- PDF parsing/thumbnails and output generation run in a Vite-bundled TypeScript module worker through `PdfWorkerClient`.
+- `pdfjs-dist@6.2.108` and `pdf-lib@1.17.1` are pinned local application dependencies; document contents remain browser-local.
 - Worker lifecycle, Object URL cleanup, page ordering, page dimensions, rotation, mixed PDF/PNG behavior, malformed-PDF recovery, and responsive large-document behavior are protected by the Phase 0 validation contract.
 - Architecture direction is documented in `docs/ARCHITECTURE.md` and the Phase 1 packet; no server-side document upload/storage is part of the current privacy model.
 
@@ -69,7 +69,7 @@ Changes must not alter the following unless explicitly approved:
 - Issue #3 / Phase 1 PDF-engine migration is the next objective but is outside this workflow-reconciliation change.
 
 ## Important paths
-- Source: `App.tsx`, `components/`, `store.ts`, `types.ts`, `utils.ts`, `workerCode.ts`
+- Source: `App.tsx`, `components/`, `store.ts`, `types.ts`, `utils.ts`, `src/pdf/`
 - Tests: `tests/store.test.ts`, `tests/e2e/`, `tests/perf/`
 - Documentation: `docs/ARCHITECTURE.md`, `docs/DESIGN_GUARDRAILS.md`, `docs/TEST_MATRIX.md`, `docs/SUPPORT_MATRIX.md`, `docs/PERFORMANCE_BASELINE.md`, `SECURITY.md`
 - CI: `.github/workflows/ci.yml`
@@ -101,10 +101,11 @@ Changes must not alter the following unless explicitly approved:
 - Release policy: Not established in the repository.
 
 ## Current known limitations / risks
-- The current PDF worker remains stringified/Blob-backed and runtime CDN-dependent until Issue #3.
+- The Phase 1 PDF worker is Chromium-qualified; Firefox/WebKit qualification remains pending.
+- The PDF.js worker module uses a local dynamic import/bootstrap suppression shim because `pdfjs-dist@6.2.108` auto-initializes against the host worker global.
 - Tailwind and Google Fonts are still loaded at runtime; their removal is separately tracked and must preserve the protected visual baseline.
 - The 500-page baseline identifies substantial current editor/grid scaling cost; performance optimization is not part of this reconciliation.
 - Some Phase 1 test cases remain intentionally pending in `docs/TEST_MATRIX.md`.
 
 ## Current next objective
-- Issue #3 / Phase 1 typed/local PDF worker migration, without redesigning ZenPDF or changing proven PDF behavior.
+- Issue #3 / Phase 1A review and acceptance, followed by Phase 2 large-document performance work.
