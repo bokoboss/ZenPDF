@@ -77,6 +77,49 @@ describe('PDF store lifecycle hardening', () => {
     expect(usePdfStore.getState().files.map(file => file.id)).toEqual(['a', 'b']);
   });
 
+  it('preserves a generated output when an invalid file reorder is a no-op', () => {
+    usePdfStore.setState({
+      files: [makeFile('a'), makeFile('b')],
+      mergedUrl: 'blob:valid-output'
+    });
+
+    usePdfStore.getState().reorderFiles('a', 'missing');
+
+    expect(usePdfStore.getState().mergedUrl).toBe('blob:valid-output');
+    expect(revokeObjectURL).not.toHaveBeenCalledWith('blob:valid-output');
+  });
+
+  it('preserves a generated output when undo and redo have no available history', () => {
+    usePdfStore.setState({
+      mergedUrl: 'blob:valid-output',
+      history: { past: [], future: [] }
+    });
+
+    usePdfStore.getState().undo();
+    usePdfStore.getState().redo();
+
+    expect(usePdfStore.getState().mergedUrl).toBe('blob:valid-output');
+    expect(revokeObjectURL).not.toHaveBeenCalledWith('blob:valid-output');
+  });
+
+  it('preserves a generated output for invalid or empty page mutations', () => {
+    const page = makePage('page-a', 'a');
+    usePdfStore.setState({
+      pageOrder: [page],
+      selectedPageIds: [],
+      mergedUrl: 'blob:valid-output'
+    });
+
+    usePdfStore.getState().rotatePage('missing-page');
+    usePdfStore.getState().removePage('missing-page');
+    usePdfStore.getState().rotateSelectedPages();
+    usePdfStore.getState().removeSelectedPages();
+
+    expect(usePdfStore.getState().pageOrder).toEqual([page]);
+    expect(usePdfStore.getState().mergedUrl).toBe('blob:valid-output');
+    expect(revokeObjectURL).not.toHaveBeenCalledWith('blob:valid-output');
+  });
+
   it('removes page state and releases file/output URLs when a file is removed', () => {
     const page = makePage('page-a', 'a');
     usePdfStore.setState({
