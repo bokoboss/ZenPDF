@@ -233,7 +233,13 @@ export const usePdfStore = create<PdfStore>((set, get) => {
 
   const handleWorkerError = (client: PdfWorkerClient, error: PdfDomainError) => {
     if (get().workerClient !== client) return;
-    set({ isSaving: false, isExtracting: false, saveTaskId: null, extractTaskId: null });
+    set({
+      parseTaskIds: {},
+      isSaving: false,
+      isExtracting: false,
+      saveTaskId: null,
+      extractTaskId: null,
+    });
     get().addToast(error.userMessage, 'error');
   };
 

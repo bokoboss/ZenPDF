@@ -148,6 +148,32 @@ describe('PdfWorkerClient typed lifecycle', () => {
     client.dispose();
   });
 
+  it('removes a cancelled task immediately even if the worker response is late', async () => {
+    const client = new PdfWorkerClient({ workerFactory });
+    const worker = createdWorkers[0];
+    const handle = client.mergeFiles([]);
+
+    dispatch(worker, {
+      type: 'TASK_PROGRESS',
+      sessionId: client.sessionId,
+      taskId: handle.taskId,
+      payload: { operation: 'merge', phase: 'write', completed: 1, total: 1 },
+    });
+    handle.cancel();
+
+    expect(client.activeTaskIds).toEqual([]);
+    await expect(handle.promise).rejects.toMatchObject({ code: 'TASK_CANCELLED' });
+
+    dispatch(worker, {
+      type: 'TASK_CANCELLED',
+      sessionId: client.sessionId,
+      taskId: handle.taskId,
+      payload: { operation: 'merge', reason: 'late acknowledgement' },
+    });
+    expect(client.activeTaskIds).toEqual([]);
+    client.dispose();
+  });
+
   it('maps worker failure and can restart into a new session', () => {
     const errors: PdfDomainError[] = [];
     const restarts: string[] = [];
