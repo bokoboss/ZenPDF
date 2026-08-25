@@ -189,9 +189,11 @@ export const usePdfStore = create<PdfStore>((set, get) => ({
   },
 
   undo: () => {
-    revokeObjectUrl(get().mergedUrl);
+    const { history, mergedUrl } = get();
+    if (history.past.length === 0) return;
+    revokeObjectUrl(mergedUrl);
+
     set(state => {
-      if (state.history.past.length === 0) return {};
       const previous = state.history.past[state.history.past.length - 1];
       const newPast = state.history.past.slice(0, state.history.past.length - 1);
       get().addToast('Undo', 'info');
@@ -208,9 +210,11 @@ export const usePdfStore = create<PdfStore>((set, get) => ({
   },
 
   redo: () => {
-    revokeObjectUrl(get().mergedUrl);
+    const { history, mergedUrl } = get();
+    if (history.future.length === 0) return;
+    revokeObjectUrl(mergedUrl);
+
     set(state => {
-      if (state.history.future.length === 0) return {};
       const next = state.history.future[0];
       const newFuture = state.history.future.slice(1);
       get().addToast('Redo', 'info');
@@ -227,6 +231,7 @@ export const usePdfStore = create<PdfStore>((set, get) => ({
   },
 
   addFiles: (newFiles) => {
+    if (newFiles.length === 0) return;
     if (!get().worker) get().initWorker();
     const worker = get().worker;
     revokeObjectUrl(get().mergedUrl);
@@ -256,7 +261,9 @@ export const usePdfStore = create<PdfStore>((set, get) => ({
 
   removeFile: (id) => {
     const file = get().files.find(f => f.id === id);
-    file?.thumbnails.forEach(revokeObjectUrl);
+    if (!file) return;
+
+    file.thumbnails.forEach(revokeObjectUrl);
     revokeObjectUrl(get().mergedUrl);
 
     set(state => {
@@ -274,30 +281,43 @@ export const usePdfStore = create<PdfStore>((set, get) => ({
   },
   
   reorderFiles: (activeId, overId) => {
-    revokeObjectUrl(get().mergedUrl);
-    set(state => {
-      const oldIndex = state.files.findIndex(f => f.id === activeId);
-      const newIndex = state.files.findIndex(f => f.id === overId);
-      if (oldIndex === -1 || newIndex === -1 || oldIndex === newIndex) return {};
-      return { files: arrayMove(state.files, oldIndex, newIndex), mergedUrl: null };
-    });
+    const state = get();
+    const oldIndex = state.files.findIndex(f => f.id === activeId);
+    const newIndex = state.files.findIndex(f => f.id === overId);
+    if (oldIndex === -1 || newIndex === -1 || oldIndex === newIndex) return;
+
+    revokeObjectUrl(state.mergedUrl);
+    set(current => ({
+      files: arrayMove(current.files, oldIndex, newIndex),
+      mergedUrl: null
+    }));
   },
   
   setPage: (page) => {
-    revokeObjectUrl(get().mergedUrl);
+    const { currentPage, mergedUrl } = get();
+    if (page === currentPage) return;
+    revokeObjectUrl(mergedUrl);
     set({ currentPage: page, mergedUrl: null });
   },
 
   updateFileStatus: (id, updates) => set(state => ({ files: state.files.map(f => f.id === id ? { ...f, ...updates } : f) })),
 
   addThumbnail: (id, index, url) => {
-    const previousUrl = get().files.find(file => file.id === id)?.thumbnails[index];
+    const targetFile = get().files.find(file => file.id === id);
+    if (!targetFile) {
+      revokeObjectUrl(url);
+      return;
+    }
+
+    const previousUrl = targetFile.thumbnails[index];
     if (previousUrl && previousUrl !== url) revokeObjectUrl(previousUrl);
     set(state => ({ files: state.files.map(f => { if (f.id !== id) return f; const newThumbs = [...f.thumbnails]; newThumbs[index] = url; return { ...f, thumbnails: newThumbs, status: 'ready' }; }) }));
   },
   
   initPageEditor: () => {
     const { files, mergedUrl } = get();
+    if (files.length === 0) return;
+
     revokeObjectUrl(mergedUrl);
     const pages: PageItem[] = [];
     files.forEach(file => {
@@ -309,84 +329,96 @@ export const usePdfStore = create<PdfStore>((set, get) => ({
   },
 
   reorderPages: (activeId, overId) => {
-    revokeObjectUrl(get().mergedUrl);
-    set(state => {
-      const oldIndex = state.pageOrder.findIndex(p => p.uniqueId === activeId);
-      const newIndex = state.pageOrder.findIndex(p => p.uniqueId === overId);
-      if (oldIndex === -1 || newIndex === -1 || oldIndex === newIndex) return {};
-      return { 
-          history: { past: [...state.history.past, state.pageOrder], future: [] }, 
-          pageOrder: arrayMove(state.pageOrder, oldIndex, newIndex),
-          mergedUrl: null 
-      };
-    });
+    const state = get();
+    const oldIndex = state.pageOrder.findIndex(p => p.uniqueId === activeId);
+    const newIndex = state.pageOrder.findIndex(p => p.uniqueId === overId);
+    if (oldIndex === -1 || newIndex === -1 || oldIndex === newIndex) return;
+
+    revokeObjectUrl(state.mergedUrl);
+    set(current => ({ 
+      history: { past: [...current.history.past, current.pageOrder], future: [] }, 
+      pageOrder: arrayMove(current.pageOrder, oldIndex, newIndex),
+      mergedUrl: null 
+    }));
   },
 
   moveSelectedPages: (activeId, overId) => {
-    revokeObjectUrl(get().mergedUrl);
-    set(state => {
-      const activeIndex = state.pageOrder.findIndex(p => p.uniqueId === activeId);
-      const overIndex = state.pageOrder.findIndex(p => p.uniqueId === overId);
-      if (activeIndex === -1 || overIndex === -1 || activeIndex === overIndex) return {};
-      if (state.selectedPageIds.includes(overId)) return {};
-      const selectedIds = new Set(state.selectedPageIds);
-      const itemsToMove = state.pageOrder.filter(p => selectedIds.has(p.uniqueId));
-      const itemsStaying = state.pageOrder.filter(p => !selectedIds.has(p.uniqueId));
-      let insertAtIndex = itemsStaying.findIndex(p => p.uniqueId === overId);
-      if (activeIndex < overIndex) insertAtIndex += 1;
-      const newOrder = [...itemsStaying];
-      newOrder.splice(insertAtIndex, 0, ...itemsToMove);
-      return { 
-          history: { past: [...state.history.past, state.pageOrder], future: [] }, 
-          pageOrder: newOrder,
-          mergedUrl: null 
-      };
-    });
+    const state = get();
+    const activeIndex = state.pageOrder.findIndex(p => p.uniqueId === activeId);
+    const overIndex = state.pageOrder.findIndex(p => p.uniqueId === overId);
+    if (activeIndex === -1 || overIndex === -1 || activeIndex === overIndex) return;
+    if (state.selectedPageIds.includes(overId)) return;
+
+    const selectedIds = new Set(state.selectedPageIds);
+    const itemsToMove = state.pageOrder.filter(p => selectedIds.has(p.uniqueId));
+    if (itemsToMove.length === 0) return;
+
+    const itemsStaying = state.pageOrder.filter(p => !selectedIds.has(p.uniqueId));
+    let insertAtIndex = itemsStaying.findIndex(p => p.uniqueId === overId);
+    if (insertAtIndex === -1) return;
+    if (activeIndex < overIndex) insertAtIndex += 1;
+
+    revokeObjectUrl(state.mergedUrl);
+    const newOrder = [...itemsStaying];
+    newOrder.splice(insertAtIndex, 0, ...itemsToMove);
+    set(current => ({ 
+      history: { past: [...current.history.past, current.pageOrder], future: [] }, 
+      pageOrder: newOrder,
+      mergedUrl: null 
+    }));
   },
 
   rotatePage: (uniqueId) => {
-    revokeObjectUrl(get().mergedUrl);
-    set(state => ({ 
-      history: { past: [...state.history.past, state.pageOrder], future: [] },
-      pageOrder: state.pageOrder.map(p => p.uniqueId === uniqueId ? { ...p, rotation: (p.rotation + 90) % 360 } : p),
+    const state = get();
+    if (!state.pageOrder.some(page => page.uniqueId === uniqueId)) return;
+
+    revokeObjectUrl(state.mergedUrl);
+    set(current => ({ 
+      history: { past: [...current.history.past, current.pageOrder], future: [] },
+      pageOrder: current.pageOrder.map(p => p.uniqueId === uniqueId ? { ...p, rotation: (p.rotation + 90) % 360 } : p),
       mergedUrl: null 
     }));
   },
 
   removePage: (uniqueId) => {
-    revokeObjectUrl(get().mergedUrl);
-    set(state => ({ 
-      history: { past: [...state.history.past, state.pageOrder], future: [] },
-      pageOrder: state.pageOrder.filter(p => p.uniqueId !== uniqueId), 
-      selectedPageIds: state.selectedPageIds.filter(id => id !== uniqueId),
+    const state = get();
+    if (!state.pageOrder.some(page => page.uniqueId === uniqueId)) return;
+
+    revokeObjectUrl(state.mergedUrl);
+    set(current => ({ 
+      history: { past: [...current.history.past, current.pageOrder], future: [] },
+      pageOrder: current.pageOrder.filter(p => p.uniqueId !== uniqueId), 
+      selectedPageIds: current.selectedPageIds.filter(id => id !== uniqueId),
       mergedUrl: null 
     }));
   },
   
   rotateSelectedPages: () => {
-    revokeObjectUrl(get().mergedUrl);
-    set(state => {
-      const selectedIds = new Set(state.selectedPageIds);
-      return { 
-          history: { past: [...state.history.past, state.pageOrder], future: [] },
-          pageOrder: state.pageOrder.map(p => selectedIds.has(p.uniqueId) ? { ...p, rotation: (p.rotation + 90) % 360 } : p),
-          mergedUrl: null 
-      };
-    });
+    const state = get();
+    if (state.selectedPageIds.length === 0) return;
+
+    revokeObjectUrl(state.mergedUrl);
+    const selectedIds = new Set(state.selectedPageIds);
+    set(current => ({ 
+      history: { past: [...current.history.past, current.pageOrder], future: [] },
+      pageOrder: current.pageOrder.map(p => selectedIds.has(p.uniqueId) ? { ...p, rotation: (p.rotation + 90) % 360 } : p),
+      mergedUrl: null 
+    }));
     get().addToast('Rotated selected pages', 'success');
   },
   
   removeSelectedPages: () => {
-    revokeObjectUrl(get().mergedUrl);
-    set(state => {
-      const selectedIds = new Set(state.selectedPageIds);
-      return { 
-          history: { past: [...state.history.past, state.pageOrder], future: [] },
-          pageOrder: state.pageOrder.filter(p => !selectedIds.has(p.uniqueId)), 
-          selectedPageIds: [],
-          mergedUrl: null 
-      };
-    });
+    const state = get();
+    if (state.selectedPageIds.length === 0) return;
+
+    revokeObjectUrl(state.mergedUrl);
+    const selectedIds = new Set(state.selectedPageIds);
+    set(current => ({ 
+      history: { past: [...current.history.past, current.pageOrder], future: [] },
+      pageOrder: current.pageOrder.filter(p => !selectedIds.has(p.uniqueId)), 
+      selectedPageIds: [],
+      mergedUrl: null 
+    }));
     get().addToast('Removed selected pages', 'success');
   },
 
