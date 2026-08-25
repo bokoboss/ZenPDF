@@ -3,6 +3,7 @@ import { defineConfig } from '@playwright/test';
 export default defineConfig({
   testDir: './tests/perf',
   testMatch: '**/*.perf.ts',
+  outputDir: './test-results/perf-runner',
   timeout: 300_000,
   expect: {
     timeout: 300_000,
