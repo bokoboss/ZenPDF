@@ -10,16 +10,17 @@ Goal: make the current application easier to trust, build, review, and change wi
 - [x] Replace scaffold README with project-specific documentation
 - [x] Record visual design guardrails
 - [ ] Add deterministic dependency lockfile
-- [ ] Add TypeScript typecheck command
-- [ ] Add build/typecheck CI
-- [ ] Add a small fixture-based regression test harness
+- [x] Add TypeScript typecheck command
+- [x] Add build/typecheck/test CI on Node 20 and 22
+- [x] Add store lifecycle regression test harness
+- [ ] Add fixture-based PDF output regression test harness
 - [ ] Document the current supported/unsupported PDF matrix
 - [ ] Record a verified visual baseline for desktop and mobile
 
 Exit criteria:
 
 - A clean checkout can be installed and built reproducibly.
-- CI blocks changes that fail typecheck/build.
+- CI blocks changes that fail typecheck/test/build.
 - The visual baseline is explicitly protected.
 
 ## Phase 1 — PDF engine hardening
@@ -36,6 +37,8 @@ Goal: keep document processing local while making worker behavior reliable and m
 - [ ] Centralize Object URL creation and revocation
 - [ ] Add explicit file and task error states
 - [ ] Handle encrypted, malformed, and unsupported documents gracefully
+
+Interim hardening already in the Phase 0 branch terminates/reinitializes the worker on full reset, suppresses removed-file parse/thumbnail responses, and revokes known thumbnail/generated-output Object URLs. These protections reduce current risk but do not replace the planned typed task/session protocol.
 
 Exit criteria:
 
@@ -67,13 +70,15 @@ Exit criteria:
 Goal: improve usability while preserving the existing ZenPDF visual language.
 
 - [ ] Improve touch interactions where hover is currently required
-- [ ] Improve keyboard and focus behavior
+- [ ] Complete keyboard and focus behavior review
 - [ ] Clarify output-page position versus original source page number
 - [ ] Add document/page provenance where useful
 - [ ] Add per-file error/retry states
 - [ ] Review destructive-action confirmations
 - [ ] Review mobile toolbar density and reachability
 - [ ] Evaluate whether the 3-step flow should evolve into a persistent workspace
+
+Phase 0 already exposes page actions on keyboard focus and adds accessible labels/focus treatment without changing the established styling. A full keyboard/touch review remains outstanding.
 
 Important: a unified workspace may be explored, but only if it can retain the established premium, calm design. This is a UX decision, not a mandate to redesign the app.
 
