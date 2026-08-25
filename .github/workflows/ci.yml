@@ -19,8 +19,10 @@ jobs:
         node: [20, 22]
 
     steps:
-      - name: Checkout
+      - name: Checkout branch head
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'pull_request' && github.head_ref || github.ref_name }}
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -29,14 +31,6 @@ jobs:
 
       - name: Install dependencies
         run: npm install --no-audit --no-fund
-
-      - name: Upload generated lockfile
-        if: matrix.node == 20
-        uses: actions/upload-artifact@v4
-        with:
-          name: package-lock
-          path: package-lock.json
-          if-no-files-found: error
 
       - name: Commit generated lockfile to modernization branch
         if: matrix.node == 20 && github.event_name == 'pull_request' && github.head_ref == 'chatgpt/phase-0-foundation-hardening'
