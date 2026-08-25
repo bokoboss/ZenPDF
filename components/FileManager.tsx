@@ -20,6 +20,7 @@ import { SortableFileItem } from './SortableFileItem';
 export function FileManager() {
   const { files, reorderFiles, removeFile, initPageEditor, mergeFiles, isSaving, mergedUrl, addFiles } = usePdfStore();
   const sensors = useSensors(useSensor(PointerSensor), useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }));
+  const isEditorReady = files.length > 0 && files.every(file => file.pageCount > 0);
 
   const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
@@ -88,7 +89,7 @@ export function FileManager() {
           
           <button 
             onClick={initPageEditor} 
-            disabled={files.length === 0 || isSaving} 
+            disabled={!isEditorReady || isSaving} 
             className="w-full py-4 bg-stone-100 text-stone-900 rounded-2xl font-medium text-lg hover:bg-stone-200 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-3"
           >
             <Grid size={20} strokeWidth={1.5} /> 
