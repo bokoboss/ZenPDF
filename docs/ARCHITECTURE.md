@@ -2,183 +2,144 @@
 
 ## Current architecture
 
-ZenPDF is a browser-only React/Vite application.
+ZenPDF is a browser-only React/Vite application. Document contents stay in the
+browser; the application does not upload them to an application server.
 
 ```text
 React UI
-  │
-  ├─ UploadPage
-  ├─ FileManager
-  └─ PageEditor
-       │
-       ▼
-Zustand store
-  │
-  ├─ document/file state
-  ├─ page ordering + selection
-  ├─ undo/redo history
-  ├─ generated output URLs
-  └─ worker lifecycle
-       │
-       ▼
-Blob-backed Web Worker
-  │
-  ├─ PDF.js: parse + raster thumbnails
-  └─ pdf-lib: merge/extract/rotate output
-```
-
-The UI and application state live on the main browser thread. PDF parsing/rendering and output generation are delegated to a worker so heavy document work does not directly execute inside React event/render code.
-
-## Current strengths
-
-- Document contents do not need to be uploaded to an application server.
-- PDF work is separated from React rendering through a Web Worker.
-- Page state has stable application-level IDs independent of source PDF page indexes.
-- File and page reorder behavior is centralized in the store.
-- Undo/redo operates on page-order snapshots.
-- PDF output is generated as browser Blob URLs.
-- The application already has a strong, coherent visual design that should be preserved.
-
-## Current technical constraints
-
-### Stringified worker
-
-`workerCode.ts` stores the full worker implementation inside a string. TypeScript therefore checks the host module but cannot typecheck the JavaScript inside that string as ordinary worker source.
-
-### Runtime PDF CDNs
-
-The worker currently imports PDF.js and pdf-lib from third-party CDNs. This prevents ZenPDF from being fully self-contained/offline-capable and makes runtime behavior dependent on external availability.
-
-### Runtime CSS/font dependencies
-
-The UI currently loads Tailwind's browser CDN script and Google Fonts resources. React/application dependencies previously also used an `esm.sh` import map; that redundant import map has been removed in Phase 0 so Vite now owns those application dependencies.
-
-### Worker protocol
-
-Worker messages currently use string `type` values and untyped payloads at runtime. There is no shared discriminated-union protocol between the worker and Zustand store yet.
-
-### Task identity
-
-Merge/extract messages distinguish only `taskType`. There is not yet a complete `taskId` / `sessionId` protocol for rejecting stale completion messages after concurrent document changes.
-
-### Large-document rendering
-
-The current worker renders thumbnails sequentially for every parsed page. The editor renders the full page grid. A large document can therefore create unnecessary work before distant pages are visible.
-
-## Phase 0 hardening already introduced
-
-The modernization branch adds several protections without changing the visual design:
-
-- strict TypeScript checking
-- Node 20/22 CI
-- regression tests around store lifecycle
-- worker termination/reinitialization on full reset
-- stale file thumbnail/page-response guards
-- Object URL cleanup for removed/replaced resources
-- invalid DnD target guards
-- keyboard exposure for page actions
-- removal of obsolete Gemini client configuration
-- removal of the redundant application import map
-
-## Target architecture
-
-```text
-React UI (visual design preserved)
-  │
-  ▼
-Typed application/domain store
-  │
-  ├─ document model
-  ├─ page model
-  ├─ selection/history
-  ├─ task state/progress
-  └─ resource registry
-       │
-       ▼
-Typed worker client
-  │  request/response discriminated unions
-  │  taskId + sessionId + progress + cancellation
-  ▼
+  |
+  v
+Zustand application store
+  |  document/page state, history, task state
+  v
+PdfWorkerClient
+  |  typed request/response envelopes
+  |  sessionId + taskId lifecycle
+  v
 Vite-bundled TypeScript module worker
-  │
-  ├─ pdfjs-dist (local dependency)
-  ├─ pdf-lib (local dependency)
-  ├─ parse/thumbnail pipeline
-  └─ output operations
+  |
+  +-- pdfjs-dist 6.2.108: PDF parsing and thumbnails
+  +-- pdf-lib 1.17.1: merge, extract, and rotation output
+  +-- ResourceRegistry boundary: browser Object URL ownership
 ```
 
-## Proposed module boundaries
+The UI and application state remain on the main browser thread. PDF parsing,
+thumbnail rendering, and output generation run through the module worker so
+heavy document work does not execute inside React event or render code.
 
-A future bounded refactor can move toward:
+## Module boundaries
 
 ```text
-src/
-  pdf/
-    protocol.ts
-    worker.ts
-    workerClient.ts
-    resources.ts
-    operations/
-      parse.ts
-      thumbnails.ts
-      merge.ts
-      extract.ts
-  state/
-    pdfStore.ts
-    history.ts
-  components/
-    ...existing visual components...
+src/pdf/
+  protocol.ts       shared discriminated request/response contracts
+  workerClient.ts   worker construction, dispatch, task settlement, restart
+  worker.ts         session-aware worker request handling
+  errors.ts         stable domain error taxonomy and safe messages
+  resources.ts      Object URL ownership and stale-resource cleanup
+  operations/
+    parse.ts        PDF.js loading and worker-safe canvas/filter factories
+    thumbnails.ts   sequential PDF page rasterization
+    merge.ts        pdf-lib merge/extract/rotation output
 ```
 
-The exact folder migration is less important than separating:
+`store.ts` owns UI/application orchestration. It maps accepted worker responses
+to file/page state, starts and cancels operations, and delegates PDF work to
+`PdfWorkerClient`; it does not import or call PDF.js or pdf-lib directly.
 
-1. PDF-engine concerns
-2. worker transport/lifecycle
-3. domain state/history
-4. React presentation
+## Worker construction and PDF.js integration
 
-## Worker protocol direction
-
-Use discriminated unions rather than unchecked message payloads, for example conceptually:
+The client uses Vite's module-worker construction:
 
 ```ts
-type WorkerRequest =
-  | { type: 'PARSE_FILE'; sessionId: string; taskId: string; payload: ParsePayload }
-  | { type: 'MERGE_PAGES'; sessionId: string; taskId: string; payload: MergePayload };
-
-type WorkerResponse =
-  | { type: 'FILE_PARSED'; sessionId: string; taskId: string; payload: ParsedPayload }
-  | { type: 'PROGRESS'; sessionId: string; taskId: string; payload: ProgressPayload }
-  | { type: 'COMPLETE'; sessionId: string; taskId: string; payload: CompletePayload }
-  | { type: 'ERROR'; sessionId: string; taskId: string; payload: ErrorPayload };
+new Worker(new URL('./worker.ts', import.meta.url), { type: 'module' });
 ```
 
-The store/client should reject responses that no longer match the active session/task.
+Both PDF libraries are installed application dependencies and are bundled by
+Vite. The worker build is configured for ES module output, including the local
+PDF.js worker chunk; there are no runtime PDF-library CDN requests or
+`importScripts()` calls.
+
+`pdfjs-dist@6.2.108` publishes a worker module that bootstraps itself when it
+is evaluated against a worker global. ZenPDF already owns that worker global,
+so `worker.ts` dynamically loads the local PDF.js worker module once while
+temporarily suppressing its bootstrap `postMessage`, then restores ZenPDF's
+typed message handler. This is the smallest compatible integration that keeps
+PDF.js parsing and thumbnail rendering inside the existing worker boundary.
+
+## Typed protocol
+
+Every request and response has this envelope:
+
+```ts
+interface WorkerRequestEnvelope<TType extends string, TPayload> {
+  type: TType;
+  sessionId: string;
+  taskId: string;
+  payload: TPayload;
+}
+```
+
+The request union covers `PARSE_FILE`, `MERGE_FILES`, `MERGE_PAGES`,
+`EXTRACT_PAGES`, `CANCEL_TASK`, and `DISPOSE_SESSION`. Responses cover parsed
+file metadata, generated thumbnail Blobs, progress, output Blobs, completion,
+cancellation, and typed errors. Runtime guards reject malformed envelopes
+before they can mutate application state.
+
+## Session and task lifecycle
+
+- A client creates a new `sessionId` when the PDF engine starts.
+- Reset disposes the old client/session, releases owned resources, and creates
+  a clean worker/session.
+- Fatal worker failure rejects active tasks and terminates the worker; the
+  client can restart into a new session without refreshing the page.
+- Every parse, merge, and extract operation receives a unique `taskId`.
+- Responses are accepted only when both client/session and task ownership still
+  match the current store state.
+- Cancellation rejects the task promise immediately with `TASK_CANCELLED` and
+  sends a typed cancellation request. Late output is ignored and cannot replace
+  a newer result.
 
 ## Resource ownership
 
-Blob/Object URLs and workers are resources with explicit lifecycles.
+The worker returns `Blob` values rather than creating browser Object URLs. The
+`ResourceRegistry` creates and owns URLs at the client/store boundary:
 
-Ownership should be deterministic:
+- thumbnail URL -> source file/page owner;
+- merged output URL -> current merged output owner;
+- extracted output URL -> current extracted output owner.
 
-- thumbnail URL → owned by its source file/page cache
-- generated merge URL → owned by the current generated output
-- extracted URL → owned until download/replacement/reset
-- worker instance → owned by the active application PDF session
+Replacing an owner revokes its previous URL. Removing a file releases all of
+that file's thumbnail URLs. Reset/dispose releases all known URLs. The client
+also has a compatibility cleanup path for ignored legacy responses that carry
+`url`/`urls` fields, so stale resources are revoked before being discarded.
 
-Replacing/removing an owner should revoke/terminate its resources.
+## Error taxonomy
 
-## Performance direction
+Worker/library failures are mapped to stable domain codes:
 
-For large documents:
+`INVALID_PDF`, `PASSWORD_REQUIRED`, `UNSUPPORTED_ENCRYPTION`,
+`UNSUPPORTED_FILE_TYPE`, `IMAGE_DECODE_FAILED`, `PDF_PARSE_FAILED`,
+`PDF_RENDER_FAILED`, `PDF_WRITE_FAILED`, `WORKER_INITIALIZATION_FAILED`,
+`WORKER_RUNTIME_FAILED`, `TASK_CANCELLED`,
+`OUT_OF_MEMORY_OR_RESOURCE_LIMIT`, and `UNKNOWN`.
 
-- parse document structure first
-- make the editor usable without waiting for every thumbnail
-- prioritize visible/near-visible pages
-- cap concurrent raster work
-- cancel work for removed/reset sessions
-- virtualize or otherwise avoid mounting hundreds/thousands of expensive page cards simultaneously
+Each error retains an internal developer message/cause and exposes a safe
+user-facing message. Password-protected documents are reported recoverably;
+ZenPDF does not promise password entry or decryption in this phase.
+
+## Current limitations
+
+- Chromium is the currently automated browser qualification target. Firefox
+  and WebKit/Safari are not claimed as release-qualified.
+- Thumbnail generation remains sequential and the editor still mounts the full
+  page grid. Scheduling and virtualization belong to Phase 2.
+- Tailwind and Google Fonts still have runtime CDN dependencies; those are UI
+  asset concerns tracked separately from the Phase 1 PDF-processing boundary.
+- WebP, GIF, TIFF, and Office documents remain unsupported.
 
 ## Design boundary
 
-Architecture work must remain visually neutral unless a visible change is required for a concrete UX/accessibility state. See `docs/DESIGN_GUARDRAILS.md` and root `AGENTS.md`.
+Phase 1 is infrastructure work and is intentionally visually neutral. The
+existing warm stone palette, typography, spacing, rounded surfaces, shadows,
+motion, upload-page treatment, and quiet information hierarchy are preserved.
+See `docs/DESIGN_GUARDRAILS.md` and `AGENTS.md`.

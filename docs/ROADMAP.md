@@ -38,18 +38,21 @@ Goal: keep document processing local while making worker behavior reliable and m
 
 Authoritative execution contract: `docs/PHASE_1_IMPLEMENTATION_PACKET.md`.
 
-- [ ] Replace stringified Blob worker with a typed module worker
-- [ ] Bundle `pdf-lib` and PDF.js as local dependencies
-- [ ] Remove runtime PDF-library CDN dependencies
-- [ ] Define typed worker request/response protocol
-- [ ] Add `taskId` and `sessionId`
-- [ ] Ignore stale worker responses after reset/session changes
-- [ ] Add cancellation/worker restart behavior
-- [ ] Centralize Object URL creation and revocation
-- [ ] Add explicit file and task error states
-- [ ] Handle encrypted, malformed, and unsupported documents gracefully
+- [x] Replace stringified Blob worker with a typed module worker
+- [x] Bundle `pdf-lib` and PDF.js as local dependencies
+- [x] Remove runtime PDF-library CDN dependencies
+- [x] Define typed worker request/response protocol
+- [x] Add `taskId` and `sessionId`
+- [x] Ignore stale worker responses after reset/session changes
+- [x] Add cancellation/worker restart behavior
+- [x] Centralize Object URL creation and revocation
+- [x] Add explicit file and task error states
+- [x] Handle encrypted, malformed, and unsupported documents gracefully
 
-Interim hardening already in the Phase 0 branch terminates/reinitializes the worker on full reset, suppresses removed-file parse/thumbnail responses, and revokes known thumbnail/generated-output Object URLs. These protections reduce current risk but do not replace the planned typed task/session protocol.
+Phase 1 retains the Phase 0 reset, stale-file, and Object URL protections while
+moving PDF work to the local typed module worker. Password entry/decryption is
+still intentionally out of scope; protected files are classified and rejected
+recoverably.
 
 Exit criteria:
 

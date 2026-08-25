@@ -141,6 +141,28 @@ Environment for the first recorded run:
 
 These are reference measurements, not universal performance guarantees.
 
+## Phase 1A local comparison
+
+The same harness was run before and after the local typed-worker migration on
+the same Windows/Headless Chrome 151.0.7922.34 environment. These values are
+local comparison evidence, not a replacement for the hosted-runner baseline
+above.
+
+| Pages | Phase 0 local parse / editor / thumbnails | Phase 1A parse / editor / thumbnails |
+|---:|---:|---:|
+| 100 | 871 / 1,006 / 2,335 ms | 128 / 243 / 250 ms |
+| 500 | 856 / 1,801 / 9,471 ms | 124 / 5,972 / 5,978 ms |
+
+The Phase 1A 500-page editor-ready measurement repeated at 6,543 ms, so the
+editor milestone regression is real in this local run rather than a single
+outlier. Parse and all-thumbnail readiness improved materially. The current
+benchmark navigates immediately into the existing full page grid while the
+typed worker delivers 500 thumbnail `Blob` responses that the main-thread
+resource registry converts to owned Object URLs. Those state/resource updates
+contend with mounting 500 sortable page cards, while the all-thumbnail result
+still completes faster overall. This is documented as a Phase 2 full-grid and
+thumbnail-bridge performance issue; no timeout was increased to hide it.
+
 ## Initial interpretation
 
 The 500-page result exposes a clear scaling problem in the current editor path:

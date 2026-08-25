@@ -1,5 +1,8 @@
 import { defineConfig } from '@playwright/test';
 
+const perfPort = Number(process.env.ZENPDF_PERF_PORT ?? '4174');
+const perfUrl = `http://127.0.0.1:${perfPort}`;
+
 export default defineConfig({
   testDir: './tests/perf',
   testMatch: '**/*.perf.ts',
@@ -13,13 +16,13 @@ export default defineConfig({
   retries: 0,
   reporter: 'line',
   use: {
-    baseURL: 'http://127.0.0.1:4174',
+    baseURL: perfUrl,
     headless: true,
   },
   webServer: {
-    command: 'npm run preview -- --host 127.0.0.1 --port 4174',
-    url: 'http://127.0.0.1:4174',
-    reuseExistingServer: false,
+    command: `npm run preview -- --host 127.0.0.1 --port ${perfPort}`,
+    url: perfUrl,
+    reuseExistingServer: process.env.ZENPDF_PERF_EXTERNAL_SERVER === '1',
     timeout: 30_000,
   },
 });
