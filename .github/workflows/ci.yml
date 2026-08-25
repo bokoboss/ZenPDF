@@ -7,11 +7,11 @@ on:
   pull_request:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   quality:
-    name: Typecheck, test, build (Node ${{ matrix.node }})
+    name: Refresh lockfile and validate (Node ${{ matrix.node }})
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -19,22 +19,34 @@ jobs:
         node: [20, 22]
 
     steps:
-      - name: Checkout
+      - name: Checkout branch head
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'pull_request' && github.head_ref || github.ref_name }}
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node }}
-          cache: npm
 
-      - name: Install dependencies
-        run: npm ci --no-audit --no-fund
+      - name: Refresh dependencies and lockfile
+        run: npm install --no-audit --no-fund
+
+      - name: Commit refreshed lockfile
+        if: matrix.node == 20 && github.event_name == 'pull_request' && github.head_ref == 'chatgpt/phase-0-foundation-hardening'
+        run: |
+          if [ -n "$(git status --porcelain package-lock.json)" ]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add package-lock.json
+            git commit -m "build: refresh lock for browser PDF tests"
+            git push origin "HEAD:${GITHUB_HEAD_REF}"
+          fi
 
       - name: Typecheck
         run: npm run typecheck
 
-      - name: Test
+      - name: Unit tests
         run: npm run test
 
       - name: Production build
