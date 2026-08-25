@@ -124,17 +124,38 @@ After the basic baseline is stable, add targeted fixtures for:
 - repeated merge/extract cycles
 - repeated large-file open/reset loops
 
-## Initial baseline status
+## Phase 0 measured baseline
 
-The CI workflow is configured to collect:
+Environment for the first recorded run:
 
-- 100-page baseline
-- 500-page baseline
+- GitHub-hosted Ubuntu 24.04 runner
+- Node 22 job environment
+- Headless Chrome 151.0.7922.34
+- blank A4-like generated PDF fixture
 
-Record the measured values below after the first successful run.
+| Pages | Source size | Parse | Editor ready | All thumbnails | Status |
+|---:|---:|---:|---:|---:|---|
+| 100 | 1,738 B | 368 ms | 811 ms | 2,229 ms | PASS |
+| 500 | 6,581 B | 876 ms | 20,697 ms | 20,731 ms | PASS |
+| 1,000 | not routinely run | — | — | — | targeted stress case |
 
-| Pages | Parse | Editor ready | All thumbnails | Status |
-|---:|---:|---:|---:|---|
-| 100 | pending | pending | pending | CI measurement pending |
-| 500 | pending | pending | pending | CI measurement pending |
-| 1,000 | not routinely run | not routinely run | not routinely run | targeted stress case |
+These are reference measurements, not universal performance guarantees.
+
+## Initial interpretation
+
+The 500-page result exposes a clear scaling problem in the current editor path:
+
+- document recognition/page-count parsing remains relatively fast (`876 ms`),
+- entering a 500-page editor takes about `20.7 s`,
+- all thumbnails are ready at almost the same point (`20.73 s`).
+
+`FileManager` does not intentionally disable the Page Editor while thumbnails finish, so the long `editorReadyMs` is not simply a thumbnail-completion gate. The current Page Editor mounts the complete page grid and one sortable item/hook set per page. The first evidence therefore supports **full-grid construction / DnD component cost as a major Phase 2 hypothesis**, while sequential thumbnail work remains a parallel optimization target.
+
+Phase 2 should test this hypothesis directly by comparing:
+
+1. page-grid virtualization or equivalent bounded rendering,
+2. lazy/viewport-priority thumbnails,
+3. bounded thumbnail concurrency,
+4. reduced sortable/DnD work for off-screen pages.
+
+The goal is not merely to make the final thumbnail completion faster; the primary user-facing objective is to make a large document useful and interactive much earlier.
