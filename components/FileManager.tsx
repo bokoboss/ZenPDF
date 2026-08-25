@@ -5,7 +5,8 @@ import {
   KeyboardSensor, 
   PointerSensor, 
   useSensor, 
-  useSensors 
+  useSensors,
+  DragEndEvent
 } from '@dnd-kit/core';
 import { 
   SortableContext, 
@@ -19,6 +20,18 @@ import { SortableFileItem } from './SortableFileItem';
 export function FileManager() {
   const { files, reorderFiles, removeFile, initPageEditor, mergeFiles, isSaving, mergedUrl, addFiles } = usePdfStore();
   const sensors = useSensors(useSensor(PointerSensor), useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }));
+
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    reorderFiles(active.id as string, over.id as string);
+  };
+
+  const handleAddFiles = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const selectedFiles = event.target.files;
+    if (selectedFiles?.length) addFiles(Array.from(selectedFiles));
+    event.target.value = '';
+  };
 
   return (
     <div className="max-w-3xl mx-auto p-6 animate-in slide-in-from-bottom-8 duration-700">
@@ -35,11 +48,11 @@ export function FileManager() {
             <Plus size={16} className="text-stone-400 group-hover:text-stone-600 transition-colors" />
             Add File
           </button>
-          <input id="add-more" type="file" multiple accept=".pdf, .jpg, .jpeg, .png" className="hidden" onChange={(e) => e.target.files && addFiles(Array.from(e.target.files))} />
+          <input id="add-more" type="file" multiple accept=".pdf, .jpg, .jpeg, .png" className="hidden" onChange={handleAddFiles} />
         </div>
       </div>
 
-      <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={(e) => { if (e.active.id !== e.over?.id) reorderFiles(e.active.id as string, e.over!.id as string); }}>
+      <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
         <SortableContext items={files.map(f => f.id)} strategy={verticalListSortingStrategy}>
           <div className="space-y-4 mb-12">
             {files.map(file => <SortableFileItem key={file.id} file={file} onRemove={removeFile} />)}
