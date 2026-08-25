@@ -91,6 +91,29 @@ export const usePdfStore = create<PdfStore>((set, get) => {
     set({ isSaving: false, saveTaskId: null });
   };
 
+  const failParseFiles = (fileIds: Iterable<string>) => {
+    const failedFileIds = new Set(fileIds);
+    const current = get();
+    const failedFiles = current.files.filter(file => failedFileIds.has(file.id));
+    const removedPageIds = new Set(
+      current.pageOrder
+        .filter(page => failedFileIds.has(page.fileId))
+        .map(page => page.uniqueId),
+    );
+
+    failedFiles.forEach(file => pdfResourceRegistry.releaseFile(file.id, file.thumbnails));
+    set(state => ({
+      files: state.files.map(file => failedFileIds.has(file.id)
+        ? { ...file, pageCount: 0, thumbnails: [], status: 'error' as const }
+        : file),
+      pageOrder: state.pageOrder.filter(page => !failedFileIds.has(page.fileId)),
+      selectedPageIds: state.selectedPageIds.filter(id => !removedPageIds.has(id)),
+      parseTaskIds: Object.fromEntries(
+        Object.entries(state.parseTaskIds).filter(([id]) => !failedFileIds.has(id)),
+      ),
+    }));
+  };
+
   const handleWorkerResponse = (client: PdfWorkerClient, response: WorkerResponse) => {
     const state = get();
     if (state.workerClient !== client || state.sessionId !== response.sessionId) return;
@@ -198,23 +221,7 @@ export const usePdfStore = create<PdfStore>((set, get) => {
         const parseFileId = Object.entries(get().parseTaskIds)
           .find(([, taskId]) => taskId === response.taskId)?.[0];
         if (parseFileId) {
-          const file = get().files.find(item => item.id === parseFileId);
-          const removedPageIds = new Set(
-            get().pageOrder
-              .filter(page => page.fileId === parseFileId)
-              .map(page => page.uniqueId),
-          );
-          pdfResourceRegistry.releaseFile(parseFileId, file?.thumbnails ?? []);
-          set(current => ({
-            files: current.files.map(item => item.id === parseFileId
-              ? { ...item, pageCount: 0, thumbnails: [], status: 'error' as const }
-              : item),
-            pageOrder: current.pageOrder.filter(page => page.fileId !== parseFileId),
-            selectedPageIds: current.selectedPageIds.filter(id => !removedPageIds.has(id)),
-            parseTaskIds: Object.fromEntries(
-              Object.entries(current.parseTaskIds).filter(([id]) => id !== parseFileId),
-            ),
-          }));
+          failParseFiles([parseFileId]);
           get().addToast(`Error: ${response.payload.userMessage}`, 'error');
         } else if (get().saveTaskId === response.taskId) {
           set({ isSaving: false, saveTaskId: null });
@@ -233,6 +240,8 @@ export const usePdfStore = create<PdfStore>((set, get) => {
 
   const handleWorkerError = (client: PdfWorkerClient, error: PdfDomainError) => {
     if (get().workerClient !== client) return;
+    const activeParseFileIds = Object.keys(get().parseTaskIds);
+    failParseFiles(activeParseFileIds);
     set({
       parseTaskIds: {},
       isSaving: false,

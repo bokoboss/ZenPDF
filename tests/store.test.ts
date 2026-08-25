@@ -379,23 +379,99 @@ describe('PDF store lifecycle hardening', () => {
 
   it('clears active parse task state and accepts new work after worker recovery', () => {
     const input = new File(['%PDF-1.7'], 'document.pdf', { type: 'application/pdf' });
-    usePdfStore.getState().addFiles([input]);
+    const unrelatedInput = new File(['%PDF-1.7'], 'ready.pdf', { type: 'application/pdf' });
+    usePdfStore.getState().addFiles([input, unrelatedInput]);
     const beforeFailure = usePdfStore.getState();
     const oldWorker = workers[0];
+    const oldOnMessage = oldWorker.onmessage;
     const oldSessionId = beforeFailure.sessionId;
-    expect(Object.keys(beforeFailure.parseTaskIds)).toHaveLength(1);
+    const failedEntry = beforeFailure.files.find(file => file.name === 'document.pdf');
+    const unrelatedEntry = beforeFailure.files.find(file => file.name === 'ready.pdf');
+    const failedTaskId = failedEntry && beforeFailure.parseTaskIds[failedEntry.id];
+    const unrelatedTaskId = unrelatedEntry && beforeFailure.parseTaskIds[unrelatedEntry.id];
+    expect(failedEntry).toBeDefined();
+    expect(unrelatedEntry).toBeDefined();
+    expect(failedTaskId).toBeDefined();
+    expect(unrelatedTaskId).toBeDefined();
+
+    usePdfStore.getState().setPage(3);
+    dispatch(oldWorker, {
+      type: 'FILE_PARSED',
+      sessionId: oldSessionId,
+      taskId: unrelatedTaskId,
+      payload: { fileId: unrelatedEntry?.id, pageCount: 1 },
+    });
+    dispatch(oldWorker, {
+      type: 'THUMBNAIL_GENERATED',
+      sessionId: oldSessionId,
+      taskId: unrelatedTaskId,
+      payload: { fileId: unrelatedEntry?.id, pageIndex: 0, blob: new Blob(['ready-thumb']) },
+    });
+    dispatch(oldWorker, {
+      type: 'TASK_COMPLETED',
+      sessionId: oldSessionId,
+      taskId: unrelatedTaskId,
+      payload: { operation: 'parse' },
+    });
+
+    dispatch(oldWorker, {
+      type: 'FILE_PARSED',
+      sessionId: oldSessionId,
+      taskId: failedTaskId,
+      payload: { fileId: failedEntry?.id, pageCount: 2 },
+    });
+    dispatch(oldWorker, {
+      type: 'THUMBNAIL_GENERATED',
+      sessionId: oldSessionId,
+      taskId: failedTaskId,
+      payload: { fileId: failedEntry?.id, pageIndex: 0, blob: new Blob(['partial-thumb']) },
+    });
+
+    const beforeFailureState = usePdfStore.getState();
+    const partialPageId = beforeFailureState.pageOrder.find(page => page.fileId === failedEntry?.id)?.uniqueId;
+    const unrelatedPageId = beforeFailureState.pageOrder.find(page => page.fileId === unrelatedEntry?.id)?.uniqueId;
+    usePdfStore.getState().setPageSelection([partialPageId, unrelatedPageId].filter(Boolean) as string[]);
+    expect(pdfResourceRegistry.ownedUrlCount()).toBe(2);
 
     oldWorker.onerror?.({ message: 'worker exploded' } as ErrorEvent);
 
-    expect(usePdfStore.getState().parseTaskIds).toEqual({});
-    expect(usePdfStore.getState().isSaving).toBe(false);
-    expect(usePdfStore.getState().isExtracting).toBe(false);
+    const failedState = usePdfStore.getState();
+    expect(failedState.files.find(file => file.id === failedEntry?.id)).toMatchObject({
+      status: 'error',
+      pageCount: 0,
+      thumbnails: [],
+    });
+    expect(failedState.files.find(file => file.id === unrelatedEntry?.id)).toMatchObject({
+      status: 'ready',
+      pageCount: 1,
+      thumbnails: ['blob:created-1'],
+    });
+    expect(failedState.pageOrder.some(page => page.fileId === failedEntry?.id)).toBe(false);
+    expect(failedState.pageOrder.some(page => page.fileId === unrelatedEntry?.id)).toBe(true);
+    expect(failedState.selectedPageIds).toEqual([unrelatedPageId]);
+    expect(failedState.parseTaskIds).toEqual({});
+    expect(failedState.isSaving).toBe(false);
+    expect(failedState.isExtracting).toBe(false);
+    expect(pdfResourceRegistry.ownedUrlCount()).toBe(1);
+    expect(revokeObjectURL).toHaveBeenCalledWith('blob:created-2');
 
     usePdfStore.getState().restartWorker();
     const recovered = usePdfStore.getState();
     expect(recovered.sessionId).not.toBe(oldSessionId);
     expect(recovered.parseTaskIds).toEqual({});
     expect(recovered.worker).toBe(workers[1] as unknown as Worker);
+
+    oldOnMessage?.({
+      data: {
+        type: 'THUMBNAIL_GENERATED',
+        sessionId: oldSessionId,
+        taskId: failedTaskId,
+        payload: { fileId: failedEntry?.id, pageIndex: 1, blob: new Blob(['late-thumb']) },
+      },
+    } as MessageEvent);
+    expect(usePdfStore.getState().files.find(file => file.id === failedEntry?.id)?.status).toBe('error');
+    expect(usePdfStore.getState().pageOrder.some(page => page.fileId === failedEntry?.id)).toBe(false);
+    expect(pdfResourceRegistry.ownedUrlCount()).toBe(1);
 
     const recoveredInput = new File(['%PDF-1.7'], 'recovered.pdf', { type: 'application/pdf' });
     usePdfStore.getState().addFiles([recoveredInput]);
