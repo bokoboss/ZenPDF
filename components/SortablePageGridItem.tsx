@@ -46,8 +46,10 @@ export const SortablePageGridItem: React.FC<SortablePageGridItemProps> = ({ page
       <button 
         onPointerDown={(e) => e.stopPropagation()} 
         onClick={(e) => { e.stopPropagation(); onToggleSelect?.(page.uniqueId, e); }} 
+        aria-label={isSelected ? 'Deselect page' : 'Select page'}
+        aria-pressed={Boolean(isSelected)}
         className={cn(
-          "absolute top-3 left-3 z-30 w-6 h-6 rounded-lg flex items-center justify-center transition-all duration-200 shadow-sm",
+          "absolute top-3 left-3 z-30 w-6 h-6 rounded-lg flex items-center justify-center transition-all duration-200 shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-stone-800 focus-visible:ring-offset-2",
           isSelected 
             ? "bg-stone-900 text-white" 
             : "bg-white/90 text-transparent border border-stone-200 hover:border-stone-400"
@@ -56,19 +58,23 @@ export const SortablePageGridItem: React.FC<SortablePageGridItemProps> = ({ page
         <Check size={14} strokeWidth={3} />
       </button>
 
-      {/* Hover Actions */}
-      <div className="absolute top-3 right-3 z-30 flex gap-2 opacity-0 group-hover:opacity-100 transition-all duration-300 translate-y-2 group-hover:translate-y-0">
+      {/* Hover / keyboard-focus actions */}
+      <div className="absolute top-3 right-3 z-30 flex gap-2 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-all duration-300 translate-y-2 group-hover:translate-y-0 group-focus-within:translate-y-0">
         <button 
           onPointerDown={(e) => e.stopPropagation()} 
           onClick={(e) => { e.stopPropagation(); onRotate?.(page.uniqueId); }} 
-          className="p-1.5 bg-white/90 shadow-sm rounded-lg text-stone-600 hover:text-stone-900 hover:bg-stone-100 border border-stone-100/50 backdrop-blur-sm"
+          aria-label="Rotate page clockwise"
+          title="Rotate page"
+          className="p-1.5 bg-white/90 shadow-sm rounded-lg text-stone-600 hover:text-stone-900 hover:bg-stone-100 border border-stone-100/50 backdrop-blur-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-stone-800"
         >
           <RotateCw size={14} strokeWidth={2} />
         </button>
         <button 
           onPointerDown={(e) => e.stopPropagation()} 
           onClick={(e) => { e.stopPropagation(); onRemove?.(page.uniqueId); }} 
-          className="p-1.5 bg-white/90 shadow-sm rounded-lg text-stone-400 hover:text-red-600 hover:bg-red-50 border border-stone-100/50 backdrop-blur-sm"
+          aria-label="Remove page"
+          title="Remove page"
+          className="p-1.5 bg-white/90 shadow-sm rounded-lg text-stone-400 hover:text-red-600 hover:bg-red-50 border border-stone-100/50 backdrop-blur-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-stone-800"
         >
           <X size={14} strokeWidth={2} />
         </button>
