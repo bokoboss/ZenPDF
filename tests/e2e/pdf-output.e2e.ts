@@ -225,7 +225,7 @@ test('extract downloads only selected pages', async ({ page }) => {
 });
 
 test('malformed PDF reports a recoverable error instead of crashing the app', async ({ page }) => {
-  allowConsoleError(page, 'Worker Inner Error');
+  allowConsoleError(page, 'Worker Error: Invalid PDF structure.');
   const malformed = Buffer.from('%PDF-1.7\nthis is intentionally malformed\n%%EOF');
 
   await uploadPdfBuffers(page, [{ name: 'malformed.pdf', buffer: malformed }]);
