@@ -225,6 +225,7 @@ test('extract downloads only selected pages', async ({ page }) => {
 });
 
 test('malformed PDF reports a recoverable error instead of crashing the app', async ({ page }) => {
+  allowConsoleError(page, 'Worker Inner Error: InvalidPDFException');
   allowConsoleError(page, 'Worker Error: Invalid PDF structure.');
   const malformed = Buffer.from('%PDF-1.7\nthis is intentionally malformed\n%%EOF');
 
@@ -232,6 +233,7 @@ test('malformed PDF reports a recoverable error instead of crashing the app', as
   await expect(page.getByText(/^Error:/)).toBeVisible({ timeout: 30_000 });
   await expect(page.getByRole('heading', { name: 'Documents' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Add File' })).toBeEnabled();
+  await expect(page.getByRole('button', { name: 'Page Editor' })).toBeDisabled();
 });
 
 test.afterEach(async ({ page }) => {
