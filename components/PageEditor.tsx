@@ -89,6 +89,12 @@ export function PageEditor() {
     }
   };
 
+  const handleEditorAddFiles = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const selectedFiles = event.target.files;
+    if (selectedFiles?.length) addFiles(Array.from(selectedFiles));
+    event.target.value = '';
+  };
+
   const handleDragStart = (event: DragStartEvent) => { setActiveId(event.active.id as string); };
   const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
@@ -124,6 +130,7 @@ export function PageEditor() {
         <div className="flex items-center gap-6">
           <button 
             onClick={() => setPage(2)} 
+            aria-label="Back to documents"
             className="w-10 h-10 flex items-center justify-center rounded-full bg-white border border-stone-200 text-stone-500 hover:text-stone-900 hover:border-stone-300 transition-all shadow-sm"
             title="Back to Files"
           >
@@ -146,8 +153,8 @@ export function PageEditor() {
             </button>
             <div className="h-6 w-px bg-stone-200 mx-2"></div>
             <div className="flex items-center gap-1">
-               <button onClick={undo} disabled={!canUndo} className="p-2 hover:bg-stone-100 rounded-xl text-stone-600 disabled:opacity-30 transition-colors"><Undo2 size={18} strokeWidth={1.5} /></button>
-               <button onClick={redo} disabled={!canRedo} className="p-2 hover:bg-stone-100 rounded-xl text-stone-600 disabled:opacity-30 transition-colors"><Redo2 size={18} strokeWidth={1.5} /></button>
+               <button onClick={undo} disabled={!canUndo} aria-label="Undo" title="Undo" className="p-2 hover:bg-stone-100 rounded-xl text-stone-600 disabled:opacity-30 transition-colors"><Undo2 size={18} strokeWidth={1.5} /></button>
+               <button onClick={redo} disabled={!canRedo} aria-label="Redo" title="Redo" className="p-2 hover:bg-stone-100 rounded-xl text-stone-600 disabled:opacity-30 transition-colors"><Redo2 size={18} strokeWidth={1.5} /></button>
             </div>
             
             <div className="h-6 w-px bg-stone-200 mx-2"></div>
@@ -184,17 +191,17 @@ export function PageEditor() {
 
          <div className="flex items-center gap-4 pr-2">
             <div className="flex items-center gap-2 bg-stone-100/80 p-1.5 rounded-full border border-stone-200/50">
-                <button onClick={() => setZoomLevel(z => Math.max(1, z - 1))} className="w-7 h-7 flex items-center justify-center hover:bg-white rounded-full text-stone-500 shadow-sm transition-all"><ZoomOut size={14} /></button>
+                <button onClick={() => setZoomLevel(z => Math.max(1, z - 1))} aria-label="Zoom out" title="Zoom out" className="w-7 h-7 flex items-center justify-center hover:bg-white rounded-full text-stone-500 shadow-sm transition-all"><ZoomOut size={14} /></button>
                 <div className="w-16 h-1 bg-stone-200 rounded-full overflow-hidden">
                     <div className="h-full bg-stone-800 transition-all duration-300" style={{ width: `${zoomLevel * 20}%` }}></div>
                 </div>
-                <button onClick={() => setZoomLevel(z => Math.min(5, z + 1))} className="w-7 h-7 flex items-center justify-center hover:bg-white rounded-full text-stone-500 shadow-sm transition-all"><ZoomIn size={14} /></button>
+                <button onClick={() => setZoomLevel(z => Math.min(5, z + 1))} aria-label="Zoom in" title="Zoom in" className="w-7 h-7 flex items-center justify-center hover:bg-white rounded-full text-stone-500 shadow-sm transition-all"><ZoomIn size={14} /></button>
             </div>
             
-            <button onClick={() => document.getElementById('add-file-editor')?.click()} className="w-10 h-10 flex items-center justify-center bg-white text-stone-600 border border-stone-200 rounded-full hover:bg-stone-50 hover:border-stone-300 transition-all shadow-sm">
+            <button onClick={() => document.getElementById('add-file-editor')?.click()} aria-label="Add files" title="Add files" className="w-10 h-10 flex items-center justify-center bg-white text-stone-600 border border-stone-200 rounded-full hover:bg-stone-50 hover:border-stone-300 transition-all shadow-sm">
                 <Plus size={20} strokeWidth={1.5} />
             </button>
-            <input id="add-file-editor" type="file" multiple accept=".pdf, .jpg, .jpeg, .png" className="hidden" onChange={(e) => e.target.files && addFiles(Array.from(e.target.files))} />
+            <input id="add-file-editor" type="file" multiple accept=".pdf, .jpg, .jpeg, .png" className="hidden" onChange={handleEditorAddFiles} />
 
             {/* SAVE BUTTON */}
             {mergedUrl ? (

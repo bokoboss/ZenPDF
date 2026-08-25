@@ -1,0 +1,95 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  quality:
+    name: Typecheck, unit test, build (Node ${{ matrix.node }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [20, 22]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Unit tests
+        run: npm run test
+
+      - name: Production build
+        run: npm run build
+
+  browser-qualification:
+    name: Browser PDF, visual, and performance qualification (Chromium)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Production build
+        run: npm run build
+
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Browser PDF output and visual tests
+        run: npm run test:e2e
+
+      - name: Record 100-page performance baseline
+        env:
+          ZENPDF_PERF_PAGES: 100
+        run: npm run benchmark:pdf
+
+      - name: Record 500-page performance baseline
+        env:
+          ZENPDF_PERF_PAGES: 500
+        run: npm run benchmark:pdf
+
+      - name: Upload visual baseline
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: zenpdf-visual-baseline
+          path: test-results/visual-baseline
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Upload performance metrics
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: zenpdf-performance-baseline
+          path: test-results/performance
+          if-no-files-found: warn
+          retention-days: 30

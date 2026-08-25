@@ -1,5 +1,5 @@
 {
   "name": "ZenPDF",
-  "description": "A secure, client-side PDF manipulation tool designed for merging, reordering, and editing PDF pages entirely in your browser using Web Workers.",
+  "description": "A calm, client-side PDF workspace for merging, reordering, extracting, rotating, and organizing document pages in the browser.",
   "requestFramePermissions": []
 }
