@@ -1,14 +1,26 @@
 import { expect, test, type Download, type Page } from '@playwright/test';
-import { PDFDocument, rgb } from 'pdf-lib';
+import { PDFDocument, degrees, rgb } from 'pdf-lib';
 import { readFile } from 'node:fs/promises';
+
+interface UploadFixture {
+  name: string;
+  mimeType: string;
+  buffer: Buffer;
+}
+
+interface ZenPdfTestPage extends Page {
+  __zenPdfConsoleErrors?: string[];
+  __zenPdfAllowedConsoleErrorPatterns?: string[];
+}
 
 async function makePdf(
   label: string,
-  pages: Array<{ width: number; height: number }>,
+  pages: Array<{ width: number; height: number; rotation?: number }>,
 ): Promise<Buffer> {
   const pdf = await PDFDocument.create();
-  pages.forEach(({ width, height }, index) => {
+  pages.forEach(({ width, height, rotation = 0 }, index) => {
     const page = pdf.addPage([width, height]);
+    if (rotation !== 0) page.setRotation(degrees(rotation));
     page.drawText(`${label}-${index + 1}`, {
       x: 24,
       y: height - 48,
@@ -25,21 +37,34 @@ async function downloadedPdf(download: Download): Promise<PDFDocument> {
   return PDFDocument.load(await readFile(path));
 }
 
+async function uploadFixtures(page: Page, files: UploadFixture[]) {
+  await page.locator('input[type="file"]').first().setInputFiles(files);
+  await expect(page.getByRole('heading', { name: 'Documents' })).toBeVisible();
+  for (const file of files) {
+    await expect(page.getByText(file.name)).toBeVisible();
+  }
+}
+
 async function uploadPdfBuffers(
   page: Page,
   files: Array<{ name: string; buffer: Buffer }>,
 ) {
-  await page.locator('input[type="file"]').first().setInputFiles(
+  await uploadFixtures(
+    page,
     files.map(({ name, buffer }) => ({
       name,
       mimeType: 'application/pdf',
       buffer,
     })),
   );
-  await expect(page.getByRole('heading', { name: 'Documents' })).toBeVisible();
-  for (const file of files) {
-    await expect(page.getByText(file.name)).toBeVisible();
-  }
+}
+
+function allowConsoleError(page: Page, pattern: string) {
+  const zenPage = page as ZenPdfTestPage;
+  zenPage.__zenPdfAllowedConsoleErrorPatterns = [
+    ...(zenPage.__zenPdfAllowedConsoleErrorPatterns ?? []),
+    pattern,
+  ];
 }
 
 test.beforeEach(async ({ page }) => {
@@ -53,7 +78,7 @@ test.beforeEach(async ({ page }) => {
   await expect(page.getByText('Find clarity in your documents.')).toBeVisible();
 
   // Preserve the error collector for assertions without adding application code.
-  (page as Page & { __zenPdfConsoleErrors?: string[] }).__zenPdfConsoleErrors = consoleErrors;
+  (page as ZenPdfTestPage).__zenPdfConsoleErrors = consoleErrors;
 });
 
 test('quick merge preserves file order and source page dimensions', async ({ page }) => {
@@ -79,6 +104,50 @@ test('quick merge preserves file order and source page dimensions', async ({ pag
   expect(first.getHeight()).toBeCloseTo(310, 1);
   expect(second.getWidth()).toBeCloseTo(420, 1);
   expect(second.getHeight()).toBeCloseTo(520, 1);
+});
+
+test('quick merge supports a mixed PNG and PDF input set', async ({ page }) => {
+  const transparentPng = Buffer.from(
+    'iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAAFElEQVR42mNkYGD4z8DAwMDAxAADAAANHQEDasKb6QAAAABJRU5ErkJggg==',
+    'base64',
+  );
+  const pdf = await makePdf('mixed', [{ width: 240, height: 360 }]);
+
+  await uploadFixtures(page, [
+    { name: 'transparent.png', mimeType: 'image/png', buffer: transparentPng },
+    { name: 'document.pdf', mimeType: 'application/pdf', buffer: pdf },
+  ]);
+
+  await page.getByRole('button', { name: 'Quick Merge' }).click();
+  const downloadLink = page.getByRole('link', { name: 'Download PDF' });
+  await expect(downloadLink).toBeVisible({ timeout: 30_000 });
+
+  const downloadPromise = page.waitForEvent('download');
+  await downloadLink.click();
+  const output = await downloadedPdf(await downloadPromise);
+
+  expect(output.getPageCount()).toBe(2);
+  expect(output.getPage(0).getWidth()).toBeCloseTo(2, 1);
+  expect(output.getPage(0).getHeight()).toBeCloseTo(2, 1);
+  expect(output.getPage(1).getWidth()).toBeCloseTo(240, 1);
+  expect(output.getPage(1).getHeight()).toBeCloseTo(360, 1);
+});
+
+test('Thai filenames survive import and do not block PDF generation', async ({ page }) => {
+  const source = await makePdf('thai-name', [{ width: 260, height: 360 }]);
+  const filename = 'เอกสารทดสอบ-01.pdf';
+
+  await uploadPdfBuffers(page, [{ name: filename, buffer: source }]);
+  await expect(page.getByText(filename)).toBeVisible();
+
+  await page.getByRole('button', { name: 'Quick Merge' }).click();
+  const downloadLink = page.getByRole('link', { name: 'Download PDF' });
+  await expect(downloadLink).toBeVisible({ timeout: 30_000 });
+
+  const downloadPromise = page.waitForEvent('download');
+  await downloadLink.click();
+  const output = await downloadedPdf(await downloadPromise);
+  expect(output.getPageCount()).toBe(1);
 });
 
 test('page editor rotation is reflected in the generated PDF', async ({ page }) => {
@@ -109,6 +178,28 @@ test('page editor rotation is reflected in the generated PDF', async ({ page }) 
   expect(output.getPage(1).getRotation().angle % 360).toBe(0);
 });
 
+test('editor rotation is additive to source-page rotation', async ({ page }) => {
+  const source = await makePdf('source-rotation', [
+    { width: 240, height: 360, rotation: 90 },
+  ]);
+
+  await uploadPdfBuffers(page, [{ name: 'source-rotation.pdf', buffer: source }]);
+  await expect(page.getByText('1 Page')).toBeVisible({ timeout: 30_000 });
+  await page.getByRole('button', { name: 'Page Editor' }).click();
+
+  await page.getByRole('button', { name: 'Rotate page clockwise' }).click({ force: true });
+  await page.getByRole('button', { name: 'Save PDF' }).click();
+
+  const downloadLink = page.getByRole('link', { name: 'Download' });
+  await expect(downloadLink).toBeVisible({ timeout: 30_000 });
+  const downloadPromise = page.waitForEvent('download');
+  await downloadLink.click();
+  const output = await downloadedPdf(await downloadPromise);
+
+  expect(output.getPageCount()).toBe(1);
+  expect(output.getPage(0).getRotation().angle % 360).toBe(180);
+});
+
 test('extract downloads only selected pages', async ({ page }) => {
   const source = await makePdf('extract', [
     { width: 200, height: 300 },
@@ -133,10 +224,23 @@ test('extract downloads only selected pages', async ({ page }) => {
   expect(output.getPage(0).getHeight()).toBeCloseTo(350, 1);
 });
 
+test('malformed PDF reports a recoverable error instead of crashing the app', async ({ page }) => {
+  allowConsoleError(page, 'Worker Inner Error');
+  const malformed = Buffer.from('%PDF-1.7\nthis is intentionally malformed\n%%EOF');
+
+  await uploadPdfBuffers(page, [{ name: 'malformed.pdf', buffer: malformed }]);
+  await expect(page.getByText(/^Error:/)).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByRole('heading', { name: 'Documents' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Add File' })).toBeEnabled();
+});
+
 test.afterEach(async ({ page }) => {
-  const errors = (page as Page & { __zenPdfConsoleErrors?: string[] }).__zenPdfConsoleErrors ?? [];
-  const actionableErrors = errors.filter(message =>
-    !message.includes('cdn.tailwindcss.com should not be used in production'),
-  );
+  const zenPage = page as ZenPdfTestPage;
+  const errors = zenPage.__zenPdfConsoleErrors ?? [];
+  const allowedPatterns = zenPage.__zenPdfAllowedConsoleErrorPatterns ?? [];
+  const actionableErrors = errors.filter(message => {
+    if (message.includes('cdn.tailwindcss.com should not be used in production')) return false;
+    return !allowedPatterns.some(pattern => message.includes(pattern));
+  });
   expect(actionableErrors).toEqual([]);
 });
