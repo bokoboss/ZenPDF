@@ -9,7 +9,7 @@ Goal: make the current application easier to trust, build, review, and change wi
 - [x] Remove obsolete AI Studio / Gemini configuration
 - [x] Replace scaffold README with project-specific documentation
 - [x] Record visual design guardrails
-- [ ] Add deterministic dependency lockfile
+- [x] Add deterministic dependency lockfile
 - [x] Add TypeScript typecheck command
 - [x] Add build/typecheck/test CI on Node 20 and 22
 - [x] Add store lifecycle regression test harness
