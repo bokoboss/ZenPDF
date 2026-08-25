@@ -74,3 +74,44 @@ jobs:
           path: test-results/visual-baseline
           if-no-files-found: warn
           retention-days: 30
+
+  performance-baseline:
+    name: PDF performance baseline (${{ matrix.pages }} pages)
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        pages: [100, 500]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Production build
+        run: npm run build
+
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Record performance baseline
+        env:
+          ZENPDF_PERF_PAGES: ${{ matrix.pages }}
+        run: npm run benchmark:pdf
+
+      - name: Upload performance metrics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: zenpdf-performance-${{ matrix.pages }}-pages
+          path: test-results/performance
+          if-no-files-found: warn
+          retention-days: 30
