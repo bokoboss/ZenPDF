@@ -93,6 +93,9 @@ test('capture protected ZenPDF visual baseline', async ({ page }) => {
   });
   await expect(page.getByRole('heading', { name: 'Documents' })).toBeVisible();
   await expect(page.getByText('2 Pages')).toBeVisible({ timeout: 30_000 });
+  const pageEditorButton = page.getByRole('button', { name: 'Page Editor' });
+  await expect(pageEditorButton).toBeEnabled();
+  await expect(pageEditorButton).toHaveCSS('opacity', '1');
   expect(await computedStyle(page, 'h2')).toMatchObject({
     fontFamily: EXPECTED_SYSTEM_FONT,
     fontWeight: '300',
