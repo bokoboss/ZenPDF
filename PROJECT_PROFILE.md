@@ -9,10 +9,10 @@
 
 ## Current accepted baseline
 - Accepted branch: `main`
-- Accepted HEAD SHA: `086680e114aeb4265ce47b9f987fb669f9d0cad2`
+- Accepted HEAD SHA: `6878e503bc8fc0b76c044a589bc817d0f78a1f52`
 - Accepted date: 2026-08-25 (`main` commit date)
-- Current phase/milestone: Phase 0 foundation hardening is accepted; Issue #3 / Phase 1A is implemented on the isolated review branch
-- Last accepted PR / CI run: PR #1 was squash-merged according to the task context; CI run identifier was not verified locally
+- Current phase/milestone: Issue #3 / Phase 1A and Issue #4 / Phase 1B are accepted; Issue #6 / Phase 1C local UI runtime qualification is in review
+- Last accepted PR / CI run: PR #9 / CI run `32863618264`
 
 ## Technology stack
 - Languages: TypeScript
@@ -65,8 +65,8 @@ Changes must not alter the following unless explicitly approved:
 - Local document processing and the current privacy boundary.
 - PDF correctness: page count/order, source dimensions, rotation, mixed PDF/image output, and recoverable malformed-PDF behavior.
 - Required regression validation and Phase 0 guardrails.
-- Tailwind and Google Fonts runtime CDN removal must be handled separately and must not cause visual drift.
-- Issue #3 / Phase 1 PDF-engine migration is the next objective but is outside this workflow-reconciliation change.
+- Local UI runtime CSS/font dependency removal must preserve the accepted visual baseline.
+- Issue #6 / Phase 1C is the current objective; Phase 2 large-document performance work remains separate.
 
 ## Important paths
 - Source: `App.tsx`, `components/`, `store.ts`, `types.ts`, `utils.ts`, `src/pdf/`
@@ -103,9 +103,9 @@ Changes must not alter the following unless explicitly approved:
 ## Current known limitations / risks
 - The Phase 1 PDF worker is Chromium-qualified; Firefox/WebKit qualification remains pending.
 - The PDF.js worker module uses a local dynamic import/bootstrap suppression shim because `pdfjs-dist@6.2.108` auto-initializes against the host worker global.
-- Tailwind and Google Fonts are still loaded at runtime; their removal is separately tracked and must preserve the protected visual baseline.
+- Tailwind CSS is build-time local and the tested production shell has no third-party UI/font runtime requests; full offline capability beyond the tested boundary is not claimed.
 - The 500-page baseline identifies substantial current editor/grid scaling cost; performance optimization is not part of this reconciliation.
 - Some Phase 1 test cases remain intentionally pending in `docs/TEST_MATRIX.md`.
 
 ## Current next objective
-- Issue #3 / Phase 1A review and acceptance, followed by Phase 2 large-document performance work.
+- Issue #6 / Phase 1C local UI runtime qualification, followed by Phase 2 large-document performance work.

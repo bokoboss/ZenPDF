@@ -1,8 +1,29 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 import { PDFDocument, rgb } from 'pdf-lib';
 import { mkdir } from 'node:fs/promises';
 
 const BASELINE_DIR = 'test-results/visual-baseline';
+const EXPECTED_SYSTEM_FONT = 'ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji"';
+
+async function computedStyle(page: Page, selector: string) {
+  return page.locator(selector).evaluate(element => {
+    const style = getComputedStyle(element);
+    const rect = element.getBoundingClientRect();
+    return {
+      fontFamily: style.fontFamily,
+      fontWeight: style.fontWeight,
+      fontSize: style.fontSize,
+      lineHeight: style.lineHeight,
+      letterSpacing: style.letterSpacing,
+      backgroundColor: style.backgroundColor,
+      borderRadius: style.borderRadius,
+      rect: {
+        width: Math.round(rect.width),
+        height: Math.round(rect.height),
+      },
+    };
+  });
+}
 
 async function makeVisualFixture(): Promise<Buffer> {
   const pdf = await PDFDocument.create();
@@ -24,10 +45,45 @@ test('capture protected ZenPDF visual baseline', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 1000 });
   await page.goto('/');
   await expect(page.getByRole('heading', { name: 'ZenPDF' })).toBeVisible();
+
+  expect(await computedStyle(page, 'body')).toMatchObject({
+    fontFamily: EXPECTED_SYSTEM_FONT,
+  });
+  expect(await computedStyle(page, 'h1')).toMatchObject({
+    fontFamily: EXPECTED_SYSTEM_FONT,
+    fontWeight: '300',
+    fontSize: '48px',
+    lineHeight: '48px',
+    letterSpacing: '-1.2px',
+  });
+  expect(await computedStyle(page, 'h1 + p')).toMatchObject({
+    fontFamily: EXPECTED_SYSTEM_FONT,
+    fontWeight: '300',
+    fontSize: '18px',
+    lineHeight: '29.25px',
+  });
+  expect(await computedStyle(page, 'nav > div:first-child span')).toMatchObject({
+    fontFamily: EXPECTED_SYSTEM_FONT,
+    fontWeight: '500',
+    fontSize: '20px',
+    lineHeight: '28px',
+    letterSpacing: '-0.5px',
+  });
+  expect(await computedStyle(page, 'nav')).toMatchObject({
+    rect: { width: 1440, height: 80 },
+  });
+  expect(await computedStyle(page, 'div.relative.w-full.max-w-xl')).toMatchObject({
+    backgroundColor: 'rgba(255, 255, 255, 0.5)',
+    borderRadius: '40px',
+    rect: { width: 576, height: 320 },
+  });
   await page.screenshot({
     path: `${BASELINE_DIR}/landing-desktop.png`,
     fullPage: true,
   });
+  if (process.env.CI) {
+    await expect(page).toHaveScreenshot('landing-desktop.png', { fullPage: true });
+  }
 
   const fixture = await makeVisualFixture();
   await page.locator('input[type="file"]').first().setInputFiles({
@@ -37,25 +93,63 @@ test('capture protected ZenPDF visual baseline', async ({ page }) => {
   });
   await expect(page.getByRole('heading', { name: 'Documents' })).toBeVisible();
   await expect(page.getByText('2 Pages')).toBeVisible({ timeout: 30_000 });
+  expect(await computedStyle(page, 'h2')).toMatchObject({
+    fontFamily: EXPECTED_SYSTEM_FONT,
+    fontWeight: '300',
+    fontSize: '30px',
+    lineHeight: '36px',
+    letterSpacing: '-0.75px',
+  });
+  expect(await computedStyle(page, 'button:has-text("Quick Merge")')).toMatchObject({
+    fontFamily: EXPECTED_SYSTEM_FONT,
+    fontWeight: '500',
+    fontSize: '18px',
+    lineHeight: '28px',
+    letterSpacing: 'normal',
+    backgroundColor: 'rgb(255, 255, 255)',
+    borderRadius: '16px',
+  });
   await page.screenshot({
     path: `${BASELINE_DIR}/documents-desktop.png`,
     fullPage: true,
   });
+  if (process.env.CI) {
+    await expect(page).toHaveScreenshot('documents-desktop.png', { fullPage: true });
+  }
 
   await page.getByRole('button', { name: 'Page Editor' }).click();
   await expect(page.getByRole('heading', { name: 'Editor' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Rotate page clockwise' })).toHaveCount(2);
+  expect(await computedStyle(page, 'h2')).toMatchObject({
+    fontFamily: EXPECTED_SYSTEM_FONT,
+    fontWeight: '300',
+    fontSize: '30px',
+    lineHeight: '36px',
+    letterSpacing: '-0.75px',
+  });
   await page.screenshot({
     path: `${BASELINE_DIR}/editor-desktop.png`,
     fullPage: true,
   });
+  if (process.env.CI) {
+    await expect(page).toHaveScreenshot('editor-desktop.png', { fullPage: true });
+  }
 
   // A full page reload creates a fresh in-memory workspace for the mobile baseline.
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto('/');
   await expect(page.getByRole('heading', { name: 'ZenPDF' })).toBeVisible();
+  expect(await computedStyle(page, 'h1')).toMatchObject({
+    fontFamily: EXPECTED_SYSTEM_FONT,
+    fontWeight: '300',
+    fontSize: '48px',
+    lineHeight: '48px',
+  });
   await page.screenshot({
     path: `${BASELINE_DIR}/landing-mobile.png`,
     fullPage: true,
   });
+  if (process.env.CI) {
+    await expect(page).toHaveScreenshot('landing-mobile.png', { fullPage: true });
+  }
 });

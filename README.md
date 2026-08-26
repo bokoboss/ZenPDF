@@ -37,9 +37,9 @@ No Gemini API key or other application secret is required.
 
 ## Privacy model
 
-ZenPDF is designed so that document processing occurs in the browser rather than on an application server. The current implementation still loads some runtime assets and PDF libraries from third-party CDNs, so the application is not yet fully offline/self-contained.
+ZenPDF is designed so that document processing occurs in the browser rather than on an application server. The production build bundles the PDF engine and UI CSS locally; the tested application shell makes no runtime requests to third-party UI, font, or icon CDNs.
 
-A modernization goal is to bundle all runtime dependencies locally so that ZenPDF can accurately provide a zero-upload, offline-capable document workflow.
+The proven boundary is the built application shell and current PDF workflows. A full offline guarantee for every future browser capability or hosting environment is not claimed.
 
 ## Product direction
 

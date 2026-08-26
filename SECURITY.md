@@ -12,9 +12,9 @@ a Vite-bundled TypeScript module worker. The worker returns local `Blob` values;
 the application owns browser Object URLs through an explicit resource registry.
 
 Document contents therefore remain local to the user's browser during the
-current PDF workflows. Tailwind's browser script and Google Fonts still have
-runtime CDN references; those UI asset dependencies are tracked separately and
-do not receive document bytes from the PDF worker.
+current PDF workflows. Tailwind CSS is compiled into the local Vite build and
+the application shell has no Google Fonts or other third-party UI asset runtime
+requests in the tested production preview.
 
 ## Secrets
 

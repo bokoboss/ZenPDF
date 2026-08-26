@@ -68,7 +68,7 @@ Performance values are reference measurements from one GitHub-hosted runner clas
 |---|---|---|
 | Document processing on application server | Not used | Core document processing occurs in the browser. |
 | Document upload required | No | The application does not require an app-server upload for current PDF operations. |
-| Fully offline/self-contained runtime | Not yet | PDF.js and pdf-lib are bundled locally in the Phase 1 worker. Tailwind and Google Fonts still have runtime CDN dependencies. |
+| Self-contained tested application shell | Supported for the tested production preview | PDF.js, pdf-lib, Tailwind CSS, and the system font stack are local/build-time dependencies; browser request audit finds no third-party UI asset requests. A universal full-offline guarantee is not claimed. |
 | API key required | No | Obsolete Gemini/API-key scaffold has been removed. |
 
 ## Browsers

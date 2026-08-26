@@ -240,9 +240,8 @@ test.afterEach(async ({ page }) => {
   const zenPage = page as ZenPdfTestPage;
   const errors = zenPage.__zenPdfConsoleErrors ?? [];
   const allowedPatterns = zenPage.__zenPdfAllowedConsoleErrorPatterns ?? [];
-  const actionableErrors = errors.filter(message => {
-    if (message.includes('cdn.tailwindcss.com should not be used in production')) return false;
-    return !allowedPatterns.some(pattern => message.includes(pattern));
-  });
+  const actionableErrors = errors.filter(
+    message => !allowedPatterns.some(pattern => message.includes(pattern)),
+  );
   expect(actionableErrors).toEqual([]);
 });

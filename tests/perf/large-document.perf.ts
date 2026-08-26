@@ -60,8 +60,5 @@ test(`records a ${pageCount}-page import and thumbnail baseline`, async ({ page 
 
   console.log(`ZENPDF_PERFORMANCE ${JSON.stringify(metrics)}`);
 
-  const actionableErrors = consoleErrors.filter(
-    message => !message.includes('cdn.tailwindcss.com should not be used in production'),
-  );
-  expect(actionableErrors).toEqual([]);
+  expect(consoleErrors).toEqual([]);
 });
