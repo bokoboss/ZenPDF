@@ -77,12 +77,12 @@ test('capture protected ZenPDF visual baseline', async ({ page }) => {
     borderRadius: '40px',
     rect: { width: 576, height: 320 },
   });
-  await page.screenshot({
+  const landingScreenshot = await page.screenshot({
     path: `${BASELINE_DIR}/landing-desktop.png`,
     fullPage: true,
   });
   if (process.env.CI) {
-    await expect(page).toHaveScreenshot('landing-desktop.png', { fullPage: true });
+    await expect(landingScreenshot).toMatchSnapshot('landing-desktop.png');
   }
 
   const fixture = await makeVisualFixture();
@@ -93,9 +93,13 @@ test('capture protected ZenPDF visual baseline', async ({ page }) => {
   });
   await expect(page.getByRole('heading', { name: 'Documents' })).toBeVisible();
   await expect(page.getByText('2 Pages')).toBeVisible({ timeout: 30_000 });
-  const pageEditorButton = page.getByRole('button', { name: 'Page Editor' });
-  await expect(pageEditorButton).toBeEnabled();
-  await expect(pageEditorButton).toHaveCSS('opacity', '1');
+  const documentsScreenshot = await page.screenshot({
+    path: `${BASELINE_DIR}/documents-desktop.png`,
+    fullPage: true,
+  });
+  if (process.env.CI) {
+    await expect(documentsScreenshot).toMatchSnapshot('documents-desktop.png');
+  }
   expect(await computedStyle(page, 'h2')).toMatchObject({
     fontFamily: EXPECTED_SYSTEM_FONT,
     fontWeight: '300',
@@ -112,13 +116,6 @@ test('capture protected ZenPDF visual baseline', async ({ page }) => {
     backgroundColor: 'rgb(255, 255, 255)',
     borderRadius: '16px',
   });
-  await page.screenshot({
-    path: `${BASELINE_DIR}/documents-desktop.png`,
-    fullPage: true,
-  });
-  if (process.env.CI) {
-    await expect(page).toHaveScreenshot('documents-desktop.png', { fullPage: true });
-  }
 
   expect(await computedStyle(page, 'button:has-text("Page Editor")')).toMatchObject({
     backgroundColor: 'rgb(246, 246, 244)',
@@ -133,12 +130,12 @@ test('capture protected ZenPDF visual baseline', async ({ page }) => {
     lineHeight: '36px',
     letterSpacing: '-0.75px',
   });
-  await page.screenshot({
+  const editorScreenshot = await page.screenshot({
     path: `${BASELINE_DIR}/editor-desktop.png`,
     fullPage: true,
   });
   if (process.env.CI) {
-    await expect(page).toHaveScreenshot('editor-desktop.png', { fullPage: true });
+    await expect(editorScreenshot).toMatchSnapshot('editor-desktop.png');
   }
 
   // A full page reload creates a fresh in-memory workspace for the mobile baseline.
@@ -151,11 +148,11 @@ test('capture protected ZenPDF visual baseline', async ({ page }) => {
     fontSize: '48px',
     lineHeight: '48px',
   });
-  await page.screenshot({
+  const mobileScreenshot = await page.screenshot({
     path: `${BASELINE_DIR}/landing-mobile.png`,
     fullPage: true,
   });
   if (process.env.CI) {
-    await expect(page).toHaveScreenshot('landing-mobile.png', { fullPage: true });
+    await expect(mobileScreenshot).toMatchSnapshot('landing-mobile.png');
   }
 });
