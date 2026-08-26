@@ -117,6 +117,9 @@ test('capture protected ZenPDF visual baseline', async ({ page }) => {
     await expect(page).toHaveScreenshot('documents-desktop.png', { fullPage: true });
   }
 
+  expect(await computedStyle(page, 'button:has-text("Page Editor")')).toMatchObject({
+    backgroundColor: 'rgb(246, 246, 244)',
+  });
   await page.getByRole('button', { name: 'Page Editor' }).click();
   await expect(page.getByRole('heading', { name: 'Editor' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Rotate page clockwise' })).toHaveCount(2);
