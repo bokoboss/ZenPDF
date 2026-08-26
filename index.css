@@ -1,0 +1,10 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Preserve the accepted Play CDN rendering for the documents editor surface. */
+@layer utilities {
+  .pt-6 > .grid > button.bg-stone-100 {
+    background-color: rgb(246 246 244 / var(--tw-bg-opacity, 1));
+  }
+}
