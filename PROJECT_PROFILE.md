@@ -104,7 +104,7 @@ Changes must not alter the following unless explicitly approved:
 - The Phase 1 PDF worker is Chromium-qualified; Firefox/WebKit qualification remains pending.
 - The PDF.js worker module uses a local dynamic import/bootstrap suppression shim because `pdfjs-dist@6.2.108` auto-initializes against the host worker global.
 - Tailwind CSS is build-time local and the tested production shell has no third-party UI/font runtime requests; full offline capability beyond the tested boundary is not claimed.
-- Phase 2A2 bounds mounted sortable work for large documents without redesigning the UI or changing the worker protocol; hosted CI run `33083046477` meets the branch's mounted-work and performance gates.
+- Phase 2A2 bounds mounted sortable work for large documents without redesigning the UI or changing the worker protocol; hosted CI run `33083372374` meets the branch's mounted-work and performance gates.
 - Some Phase 1 test cases remain intentionally pending in `docs/TEST_MATRIX.md`.
 
 ## Current next objective

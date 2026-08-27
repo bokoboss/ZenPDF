@@ -270,13 +270,13 @@ range mounted 30 sortables, and document scroll height remained 32,808 px before
 and after the range change. These local values are directional; the exact hosted
 CI run remains the acceptance authority.
 
-The exact hosted Linux qualification was CI run `33083046477` at commit
-`bca569069fcf7fb1644adbe1e1dc911ec91984b0`:
+The exact hosted Linux qualification was CI run `33083372374` at commit
+`d207c092f4f97429b9093e53447464d4f01462e0`:
 
 | Pages | Parse | Editor ready | All thumbnails | Editor shell | First card usable | First visible thumbnail | First interaction | Far interaction | Sortables at shell | Shells at shell |
 |---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| 100 | 266 ms | 566 ms | 487 ms | 487 ms | 551 ms | 562 ms | 52 ms | 57 ms | 25 | 75 |
-| 500 | 256 ms | 1,328 ms | 1,278 ms | 1,278 ms | 1,317 ms | 1,322 ms | 34 ms | 58 ms | 25 | 475 |
+| 100 | 388 ms | 711 ms | 644 ms | 644 ms | 706 ms | 709 ms | 55 ms | 42 ms | 25 | 75 |
+| 500 | 233 ms | 1,137 ms | 1,086 ms | 1,086 ms | 1,131 ms | 1,134 ms | 34 ms | 81 ms | 25 | 475 |
 
 The hosted 500-page result meets the Phase 2A2 ceilings of 2,500 ms for
 `editorShellReadyMs`, 2,750 ms for `firstCardUsableMs`, 3,500 ms for

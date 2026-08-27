@@ -169,7 +169,7 @@ Phase 2A2 browser qualification:
 - [x] The mounted-work gate stays at or below 50 sortables at default 1440x1000 zoom and below 100 across zoom levels 1-5 in the qualification fixture.
 - [x] Offscreen logical shells do not own thumbnail subscriptions or Object URL cleanup; thumbnail ownership remains in the store/resource registry.
 
-The exact hosted Phase 2A qualification (CI run `33072439871`, commit `8b16cd61773cf1fd2aa438d34f654b7dca188017`) measured 100 pages at 267 ms parse / 635 ms editor-ready / 517 ms all thumbnails and 500 pages at 273 ms / 8,698 ms / 8,587 ms. The exact hosted Phase 2A2 qualification (CI run `33083046477`, commit `bca569069fcf7fb1644adbe1e1dc911ec91984b0`) measured 100 pages at 266 ms parse / 566 ms editor-ready / 487 ms all thumbnails and 500 pages at 256 ms / 1,328 ms / 1,278 ms, with 25 expensive sortables and 475 lightweight shells at editor shell. The Phase 2A2 performance ceilings were met; a full virtual-grid DnD architecture remains out of scope for this change.
+The exact hosted Phase 2A qualification (CI run `33072439871`, commit `8b16cd61773cf1fd2aa438d34f654b7dca188017`) measured 100 pages at 267 ms parse / 635 ms editor-ready / 517 ms all thumbnails and 500 pages at 273 ms / 8,698 ms / 8,587 ms. The exact hosted Phase 2A2 qualification (CI run `33083372374`, commit `d207c092f4f97429b9093e53447464d4f01462e0`) measured 100 pages at 388 ms parse / 711 ms editor-ready / 644 ms all thumbnails and 500 pages at 233 ms / 1,137 ms / 1,086 ms, with 25 expensive sortables and 475 lightweight shells at editor shell. The Phase 2A2 performance ceilings were met; a full virtual-grid DnD architecture remains out of scope for this change.
 
 Phase 2 acceptance direction:
 
