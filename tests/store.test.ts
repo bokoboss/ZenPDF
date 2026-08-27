@@ -40,7 +40,6 @@ const makePage = (uniqueId: string, fileId: string): PageItem => ({
   uniqueId,
   fileId,
   pageIndex: 0,
-  thumb: '',
   rotation: 0,
 });
 
@@ -536,6 +535,37 @@ describe('PDF store lifecycle hardening', () => {
     expect(result.files[0]?.status).toBe('ready');
     expect(result.files[0]?.thumbnails[0]).toBe('blob:created-1');
     expect(pdfResourceRegistry.ownedUrlCount()).toBe(1);
+  });
+
+  it('keeps page order stable when a thumbnail arrives', () => {
+    const input = new File(['%PDF-1.7'], 'document.pdf', { type: 'application/pdf' });
+    usePdfStore.getState().addFiles([input]);
+    usePdfStore.getState().setPage(3);
+    const beforeParse = usePdfStore.getState();
+    const entry = beforeParse.files[0];
+    const worker = workers[0];
+    const taskId = beforeParse.parseTaskIds[entry.id];
+
+    dispatch(worker, {
+      type: 'FILE_PARSED',
+      sessionId: beforeParse.sessionId,
+      taskId,
+      payload: { fileId: entry.id, pageCount: 2 },
+    });
+    const pageOrderBeforeThumbnail = usePdfStore.getState().pageOrder;
+
+    dispatch(worker, {
+      type: 'THUMBNAIL_GENERATED',
+      sessionId: beforeParse.sessionId,
+      taskId,
+      payload: { fileId: entry.id, pageIndex: 0, blob: new Blob(['thumb']) },
+    });
+
+    const afterThumbnail = usePdfStore.getState();
+    expect(afterThumbnail.pageOrder).toBe(pageOrderBeforeThumbnail);
+    expect(afterThumbnail.pageOrder).toHaveLength(2);
+    expect(afterThumbnail.pageOrder[0]).not.toHaveProperty('thumb');
+    expect(afterThumbnail.files[0]?.thumbnails).toEqual(['blob:created-1', '']);
   });
 
   it('ignores stale session responses before creating any object URL', () => {

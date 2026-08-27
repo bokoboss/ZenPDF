@@ -7,4 +7,9 @@
   .pt-6 > .grid > button.bg-stone-100 {
     background-color: rgb(246 246 244 / var(--tw-bg-opacity, 1));
   }
+
+  .content-visibility-auto {
+    content-visibility: auto;
+    contain-intrinsic-size: auto 400px;
+  }
 }

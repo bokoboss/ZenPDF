@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { 
   DndContext, 
   closestCenter, 
@@ -26,9 +26,28 @@ import { SortablePageGridItem } from './SortablePageGridItem';
 import { cn } from '../utils';
 
 export function PageEditor() {
-  const { pageOrder, selectedPageIds, history, undo, redo, reorderPages, moveSelectedPages, rotatePage, removePage, togglePageSelection, setPageSelection, selectAllPages, deselectAllPages, rotateSelectedPages, removeSelectedPages, extractSelectedPages, mergePages, isSaving, isExtracting, mergedUrl, extractedUrl, setPage, addFiles } = usePdfStore();
+  const pageOrder = usePdfStore(state => state.pageOrder);
+  const selectedPageIds = usePdfStore(state => state.selectedPageIds);
+  const canUndo = usePdfStore(state => state.history.past.length > 0);
+  const canRedo = usePdfStore(state => state.history.future.length > 0);
+  const isSaving = usePdfStore(state => state.isSaving);
+  const isExtracting = usePdfStore(state => state.isExtracting);
+  const mergedUrl = usePdfStore(state => state.mergedUrl);
+  const extractedUrl = usePdfStore(state => state.extractedUrl);
+  const undo = usePdfStore(state => state.undo);
+  const redo = usePdfStore(state => state.redo);
+  const rotatePage = usePdfStore(state => state.rotatePage);
+  const removePage = usePdfStore(state => state.removePage);
+  const selectAllPages = usePdfStore(state => state.selectAllPages);
+  const deselectAllPages = usePdfStore(state => state.deselectAllPages);
+  const rotateSelectedPages = usePdfStore(state => state.rotateSelectedPages);
+  const removeSelectedPages = usePdfStore(state => state.removeSelectedPages);
+  const extractSelectedPages = usePdfStore(state => state.extractSelectedPages);
+  const mergePages = usePdfStore(state => state.mergePages);
+  const setPage = usePdfStore(state => state.setPage);
+  const addFiles = usePdfStore(state => state.addFiles);
   const [activeId, setActiveId] = useState<string | null>(null);
-  const [lastSelectedId, setLastSelectedId] = useState<string | null>(null);
+  const lastSelectedId = useRef<string | null>(null);
   const [zoomLevel, setZoomLevel] = useState(3);
   
   const sensors = useSensors(
@@ -71,48 +90,51 @@ export function PageEditor() {
     return () => document.removeEventListener('keydown', handleKeyDown);
   }, [undo, redo]);
 
-  const handlePageSelect = (id: string, e: React.MouseEvent) => {
-    if (e.shiftKey && lastSelectedId) {
-      const start = pageOrder.findIndex(p => p.uniqueId === lastSelectedId);
-      const end = pageOrder.findIndex(p => p.uniqueId === id);
+  const handlePageSelect = useCallback((id: string, e: React.MouseEvent) => {
+    const state = usePdfStore.getState();
+    if (e.shiftKey && lastSelectedId.current) {
+      const start = state.pageOrder.findIndex(p => p.uniqueId === lastSelectedId.current);
+      const end = state.pageOrder.findIndex(p => p.uniqueId === id);
       
       if (start !== -1 && end !== -1) {
         const min = Math.min(start, end);
         const max = Math.max(start, end);
-        const rangeIds = pageOrder.slice(min, max + 1).map(p => p.uniqueId);
-        const newSelection = Array.from(new Set([...selectedPageIds, ...rangeIds]));
-        setPageSelection(newSelection);
+        const rangeIds = state.pageOrder.slice(min, max + 1).map(p => p.uniqueId);
+        const newSelection = Array.from(new Set([...state.selectedPageIds, ...rangeIds]));
+        state.setPageSelection(newSelection);
       }
     } else {
-      togglePageSelection(id);
-      setLastSelectedId(id);
+      state.togglePageSelection(id);
+      lastSelectedId.current = id;
     }
-  };
+  }, []);
 
-  const handleEditorAddFiles = (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleEditorAddFiles = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFiles = event.target.files;
     if (selectedFiles?.length) addFiles(Array.from(selectedFiles));
     event.target.value = '';
-  };
+  }, [addFiles]);
 
-  const handleDragStart = (event: DragStartEvent) => { setActiveId(event.active.id as string); };
-  const handleDragEnd = (event: DragEndEvent) => {
+  const handleDragStart = useCallback((event: DragStartEvent) => { setActiveId(event.active.id as string); }, []);
+  const handleDragEnd = useCallback((event: DragEndEvent) => {
     const { active, over } = event;
     setActiveId(null);
     if (!over) return;
-    if (selectedPageIds.includes(active.id as string)) {
-      if (active.id !== over.id) moveSelectedPages(active.id as string, over.id as string);
+    const state = usePdfStore.getState();
+    if (state.selectedPageIds.includes(active.id as string)) {
+      if (active.id !== over.id) state.moveSelectedPages(active.id as string, over.id as string);
     } else {
-      if (active.id !== over.id) reorderPages(active.id as string, over.id as string);
+      if (active.id !== over.id) state.reorderPages(active.id as string, over.id as string);
     }
-  };
+  }, []);
 
-  const activeItem = activeId ? pageOrder.find(p => p.uniqueId === activeId) : null;
-  const dragCount = activeId && selectedPageIds.includes(activeId) ? selectedPageIds.length : 1;
-  const canUndo = history.past.length > 0;
-  const canRedo = history.future.length > 0;
-
-  const getGridClass = () => {
+  const activeItem = useMemo(
+    () => activeId ? pageOrder.find(p => p.uniqueId === activeId) ?? null : null,
+    [activeId, pageOrder],
+  );
+  const selectedPageIdSet = useMemo(() => new Set(selectedPageIds), [selectedPageIds]);
+  const sortableIds = useMemo(() => pageOrder.map(page => page.uniqueId), [pageOrder]);
+  const gridClass = useMemo(() => {
     switch(zoomLevel) {
       case 1: return "grid-cols-4 md:grid-cols-6 lg:grid-cols-8";
       case 2: return "grid-cols-3 md:grid-cols-5 lg:grid-cols-6";
@@ -121,7 +143,8 @@ export function PageEditor() {
       case 5: return "grid-cols-1 md:grid-cols-2 lg:grid-cols-3";
       default: return "grid-cols-2 md:grid-cols-4 lg:grid-cols-5";
     }
-  };
+  }, [zoomLevel]);
+  const dragCount = activeId && selectedPageIdSet.has(activeId) ? selectedPageIds.length : 1;
 
   return (
     <div className="w-full max-w-[1800px] mx-auto p-4 md:p-8 animate-in slide-in-from-right-8 duration-700">
@@ -226,13 +249,13 @@ export function PageEditor() {
       </div>
 
       <DndContext sensors={sensors} collisionDetection={closestCenter} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
-        <SortableContext items={pageOrder.map(p => p.uniqueId)} strategy={rectSortingStrategy}>
-          <div className={cn("grid gap-6 pb-32 transition-all duration-500 ease-out", getGridClass())}>
+        <SortableContext items={sortableIds} strategy={rectSortingStrategy}>
+          <div className={cn("grid gap-6 pb-32 transition-all duration-500 ease-out", gridClass)}>
             {pageOrder.map(page => (
               <SortablePageGridItem 
                 key={page.uniqueId} 
                 page={page} 
-                isSelected={selectedPageIds.includes(page.uniqueId)} 
+                isSelected={selectedPageIdSet.has(page.uniqueId)}
                 onToggleSelect={handlePageSelect} 
                 onRotate={rotatePage} 
                 onRemove={removePage} 

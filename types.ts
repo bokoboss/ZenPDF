@@ -13,7 +13,6 @@ export interface PageItem {
   uniqueId: string;
   fileId: string;
   pageIndex: number;
-  thumb: string;
   rotation: number;
 }
 
