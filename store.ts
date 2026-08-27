@@ -134,7 +134,7 @@ export const usePdfStore = create<PdfStore>((set, get) => {
           if (current.currentPage === 3 && !current.pageOrder.some(page => page.fileId === fileId)) {
             const newItems: PageItem[] = [];
             for (let pageIndex = 0; pageIndex < pageCount; pageIndex += 1) {
-              newItems.push({ uniqueId: generateId(), fileId, pageIndex, thumb: '', rotation: 0 });
+              newItems.push({ uniqueId: generateId(), fileId, pageIndex, rotation: 0 });
             }
             newPageOrder = [...current.pageOrder, ...newItems];
           }
@@ -161,11 +161,6 @@ export const usePdfStore = create<PdfStore>((set, get) => {
             thumbnails[pageIndex] = url;
             return { ...file, thumbnails, status: 'ready' as const };
           }),
-          pageOrder: current.pageOrder.map(page => (
-            page.fileId === fileId && page.pageIndex === pageIndex
-              ? { ...page, thumb: url }
-              : page
-          )),
         }));
         break;
       }
@@ -494,9 +489,11 @@ export const usePdfStore = create<PdfStore>((set, get) => {
       if (files.length === 0) return;
       invalidateMergedOutput();
       const pages: PageItem[] = [];
-      files.forEach(file => file.thumbnails.forEach((thumb, pageIndex) => {
-        pages.push({ uniqueId: generateId(), fileId: file.id, pageIndex, thumb, rotation: 0 });
-      }));
+      files.forEach(file => {
+        for (let pageIndex = 0; pageIndex < file.pageCount; pageIndex += 1) {
+          pages.push({ uniqueId: generateId(), fileId: file.id, pageIndex, rotation: 0 });
+        }
+      });
       set({ pageOrder: pages, selectedPageIds: [], currentPage: 3, history: { past: [], future: [] } });
     },
 

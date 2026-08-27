@@ -35,8 +35,41 @@ test(`records a ${pageCount}-page import and thumbnail baseline`, async ({ page 
 
   await page.getByRole('button', { name: 'Page Editor' }).click();
   await expect(page.getByRole('heading', { name: 'Editor' })).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Select page' })).toHaveCount(pageCount);
+  await expect(page.getByRole('button', { name: 'Save PDF' })).toBeEnabled();
+  const editorShellReadyAt = performance.now();
+
+  const pageSelectionControls = page.locator(
+    'button[aria-label="Select page"], button[aria-label="Deselect page"]',
+  );
+  await expect(pageSelectionControls).toHaveCount(pageCount);
   const editorReadyAt = performance.now();
+
+  const firstCard = page.locator('[data-page-id]').first();
+  const firstCardControl = firstCard.locator(
+    'button[aria-label="Select page"], button[aria-label="Deselect page"]',
+  );
+  await expect(firstCardControl).toBeVisible();
+  const firstCardInteractionStarted = performance.now();
+  await firstCardControl.click();
+  await expect(firstCardControl).toHaveAttribute('aria-pressed', 'true');
+  const firstCardUsableAt = performance.now();
+
+  const firstVisibleThumbnail = page.locator('img[alt="Page"]').first();
+  await expect(firstVisibleThumbnail).toBeVisible();
+  const firstVisibleThumbnailAt = performance.now();
+
+  const thumbnailCountAtEditorShell = await page.locator('img[alt="Page"]').count();
+
+  const farCard = page.locator('[data-page-id]').nth(pageCount - 1);
+  await farCard.scrollIntoViewIfNeeded();
+  const farCardControl = farCard.locator(
+    'button[aria-label="Select page"], button[aria-label="Deselect page"]',
+  );
+  await expect(farCardControl).toBeVisible();
+  const farCardInteractionStarted = performance.now();
+  await farCardControl.click();
+  await expect(farCardControl).toHaveAttribute('aria-pressed', 'true');
+  const farCardUsableAt = performance.now();
 
   await expect(page.locator('img[alt="Page"]')).toHaveCount(pageCount);
   const thumbnailsReadyAt = performance.now();
@@ -47,6 +80,12 @@ test(`records a ${pageCount}-page import and thumbnail baseline`, async ({ page 
     parseMs: Math.round(parsedAt - startedAt),
     editorReadyMs: Math.round(editorReadyAt - startedAt),
     allThumbnailsMs: Math.round(thumbnailsReadyAt - startedAt),
+    editorShellReadyMs: Math.round(editorShellReadyAt - startedAt),
+    firstCardUsableMs: Math.round(firstCardUsableAt - startedAt),
+    firstVisibleThumbnailMs: Math.round(firstVisibleThumbnailAt - startedAt),
+    firstCardInteractionMs: Math.round(firstCardUsableAt - firstCardInteractionStarted),
+    farCardInteractionMs: Math.round(farCardUsableAt - farCardInteractionStarted),
+    thumbnailCountAtEditorShell,
     userAgent: await page.evaluate(() => navigator.userAgent),
     measuredAt: new Date().toISOString(),
   };
@@ -60,5 +99,7 @@ test(`records a ${pageCount}-page import and thumbnail baseline`, async ({ page 
 
   console.log(`ZENPDF_PERFORMANCE ${JSON.stringify(metrics)}`);
 
+  expect(metrics.firstCardInteractionMs).toBeLessThan(2_000);
+  expect(metrics.farCardInteractionMs).toBeLessThan(2_000);
   expect(consoleErrors).toEqual([]);
 });

@@ -1,10 +1,11 @@
-import React from 'react';
+import React, { memo } from 'react';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { Check, RotateCw, X } from 'lucide-react';
 import { PageItem } from '../types';
 import { cn } from '../utils';
 import { SkeletonPage } from './SkeletonPage';
+import { usePdfStore } from '../store';
 
 interface SortablePageGridItemProps {
   page: PageItem;
@@ -15,7 +16,22 @@ interface SortablePageGridItemProps {
   isOverlay?: boolean;
 }
 
-export const SortablePageGridItem: React.FC<SortablePageGridItemProps> = ({ page, isSelected, onToggleSelect, onRotate, onRemove, isOverlay = false }) => {
+const PageThumbnail = memo(function PageThumbnail({ fileId, pageIndex, rotation }: { fileId: string; pageIndex: number; rotation: number }) {
+  const thumbnail = usePdfStore(state => (
+    state.files.find(file => file.id === fileId)?.thumbnails[pageIndex] ?? ''
+  ));
+
+  return thumbnail ? (
+    <img
+      src={thumbnail}
+      alt="Page"
+      className="w-full h-full object-contain transition-transform duration-300 shadow-sm"
+      style={{ transform: `rotate(${rotation}deg)` }}
+    />
+  ) : <SkeletonPage />;
+});
+
+export const SortablePageGridItem = memo(function SortablePageGridItem({ page, isSelected, onToggleSelect, onRotate, onRemove, isOverlay = false }: SortablePageGridItemProps) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: page.uniqueId });
   const style = { transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.3 : 1 };
 
@@ -23,7 +39,7 @@ export const SortablePageGridItem: React.FC<SortablePageGridItemProps> = ({ page
     return (
       <div className={cn("relative aspect-[3/4] bg-white rounded-2xl border-2 border-stone-800 shadow-2xl overflow-hidden cursor-grabbing scale-105")}>
         <div className="w-full h-full p-3 flex flex-col items-center justify-center">
-          {page.thumb ? <img src={page.thumb} alt="Page" className="w-full h-full object-contain" style={{ transform: `rotate(${page.rotation}deg)` }} /> : <SkeletonPage />}
+          <PageThumbnail fileId={page.fileId} pageIndex={page.pageIndex} rotation={page.rotation} />
         </div>
       </div>
     );
@@ -33,6 +49,8 @@ export const SortablePageGridItem: React.FC<SortablePageGridItemProps> = ({ page
     <div 
       ref={setNodeRef} 
       style={style} 
+      data-page-index={page.pageIndex}
+      data-page-id={page.uniqueId}
       className={cn(
         "relative group aspect-[3/4] bg-white rounded-2xl border transition-all duration-300 ease-out overflow-hidden", 
         isSelected 
@@ -40,7 +58,7 @@ export const SortablePageGridItem: React.FC<SortablePageGridItemProps> = ({ page
           : "border-stone-100 hover:border-stone-300 hover:shadow-lg hover:-translate-y-1"
       )}
     >
-      <div {...attributes} {...listeners} className="absolute inset-0 cursor-grab active:cursor-grabbing z-10" onClick={(e) => onToggleSelect?.(page.uniqueId, e)} />
+      <div {...attributes} {...listeners} data-page-drag-handle className="absolute inset-0 cursor-grab active:cursor-grabbing z-10" onClick={(e) => onToggleSelect?.(page.uniqueId, e)} />
       
       {/* Checkbox */}
       <button 
@@ -80,17 +98,8 @@ export const SortablePageGridItem: React.FC<SortablePageGridItemProps> = ({ page
         </button>
       </div>
 
-      <div className="w-full h-full p-3 flex flex-col items-center justify-center">
-        {page.thumb ? (
-            <img 
-                src={page.thumb} 
-                alt="Page" 
-                className="w-full h-full object-contain transition-transform duration-300 shadow-sm" 
-                style={{ transform: `rotate(${page.rotation}deg)` }} 
-            />
-        ) : (
-            <SkeletonPage />
-        )}
+      <div className="content-visibility-auto w-full h-full p-3 flex flex-col items-center justify-center">
+        <PageThumbnail fileId={page.fileId} pageIndex={page.pageIndex} rotation={page.rotation} />
       </div>
 
       {/* Page Number Badge */}
@@ -101,4 +110,4 @@ export const SortablePageGridItem: React.FC<SortablePageGridItemProps> = ({ page
       </div>
     </div>
   );
-}
+});

@@ -62,6 +62,18 @@ Elapsed time from file selection until all expected page thumbnail images are pr
 
 Current ZenPDF renders thumbnails sequentially, so this metric is especially useful for evaluating Phase 2 scheduling and prioritization.
 
+### Phase 2A editor milestones
+
+Phase 2A adds milestones that separate editor construction from thumbnail completion:
+
+- `editorShellReadyMs`: the editor heading and usable Save control are available.
+- `firstCardUsableMs`: the first page card can be selected.
+- `firstVisibleThumbnailMs`: the first visible page thumbnail is present.
+- `firstCardInteractionMs` / `farCardInteractionMs`: the elapsed time for selection at the first and last page cards once each is exercised.
+- `thumbnailCountAtEditorShell`: the number of rendered thumbnail images when the editor shell becomes ready.
+
+These values are recorded alongside the original three milestones in the same JSON artifact.
+
 ### `sourceBytes`
 
 Generated fixture size for reproducibility/context.
@@ -181,3 +193,25 @@ Phase 2 should test this hypothesis directly by comparing:
 4. reduced sortable/DnD work for off-screen pages.
 
 The goal is not merely to make the final thumbnail completion faster; the primary user-facing objective is to make a large document useful and interactive much earlier.
+
+## Phase 2A bounded editor qualification
+
+Phase 2A addresses the confirmed main-thread amplification in the existing full-DOM editor: each thumbnail response previously rewrote every page item, waking the entire sortable grid. The bounded change keeps canonical thumbnails on `files[fileId].thumbnails`, leaves `pageOrder` stable for thumbnail-only responses, narrows `PageEditor` subscriptions, isolates each card's thumbnail subscription, memoizes cards/IDs, and applies `content-visibility: auto` only to inner page content. The outer sortable card geometry remains in the DOM. No true virtualization or DnD rewrite is included.
+
+The Phase 1C hosted reference used for this comparison was:
+
+| Pages | Parse | Editor ready | All thumbnails |
+|---:|---:|---:|---:|
+| 100 | 257 ms | 521 ms | 531 ms |
+| 500 | 261 ms | 9,860 ms | 9,868 ms |
+
+The first local Windows/Headless Chrome 151 qualification after the Phase 2A change was:
+
+| Pages | Parse | Editor ready | All thumbnails | Editor shell | First card usable | First visible thumbnail | First interaction | Far interaction | Thumbnails at shell |
+|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 100 | 214 ms | 299 ms | 442 ms | 293 ms | 338 ms | 343 ms | 37 ms | 45 ms | 100 |
+| 500 | 105 ms | 3,465 ms | 3,674 ms | 3,456 ms | 3,507 ms | 3,509 ms | 36 ms | 79 ms | 500 |
+
+These local values are directional evidence only. The authoritative Phase 2A gate remains the hosted Linux CI run: the 500-page `editorReadyMs` target is at or below 3,500 ms, with no material parse or 100-page regression and no timeout increase. The exact hosted result and commit are reported with the final pull request qualification.
+
+The corresponding 100-page browser qualification covers first/far selection, zoom levels 1–5, multi-select and group movement, mouse/keyboard/touch drag, reorder undo, rotation, removal undo/redo, and reparsed output order/dimensions/rotation. Lifecycle tests separately verify that thumbnail-only responses do not mutate `pageOrder` and that existing stale/reset/remove/fatal-worker protections remain intact.
