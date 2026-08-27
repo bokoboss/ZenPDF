@@ -52,13 +52,16 @@ This represents user-perceived document recognition/readiness, not completion of
 
 ### `editorReadyMs`
 
-Elapsed time from file selection until the Page Editor has instantiated the expected number of page cards.
+Elapsed time from file selection until the Page Editor has exposed the expected number of logical page entries.
+In the windowed editor, logical entries include lightweight geometry-preserving shells;
+this metric does not require every expensive sortable card or thumbnail subtree to be mounted.
 
-This captures the cost of entering the current non-virtualized editor.
+This captures the cost of entering the editor while keeping the full logical page order available.
 
 ### `allThumbnailsMs`
 
-Elapsed time from file selection until all expected page thumbnail images are present in the editor.
+Elapsed time from file selection until the store reports all expected canonical page thumbnails ready.
+The metric is independent of how many thumbnail subtrees are currently mounted in the window.
 
 Current ZenPDF renders thumbnails sequentially, so this metric is especially useful for evaluating Phase 2 scheduling and prioritization.
 
@@ -70,9 +73,25 @@ Phase 2A adds milestones that separate editor construction from thumbnail comple
 - `firstCardUsableMs`: the first page card can be selected.
 - `firstVisibleThumbnailMs`: the first visible page thumbnail is present.
 - `firstCardInteractionMs` / `farCardInteractionMs`: the elapsed time for selection at the first and last page cards once each is exercised.
-- `thumbnailCountAtEditorShell`: the number of rendered thumbnail images when the editor shell becomes ready.
+- `thumbnailReadyCountAtEditorShell`: the number of canonical thumbnails ready when the editor shell becomes ready.
 
 These values are recorded alongside the original three milestones in the same JSON artifact.
+
+### Phase 2A2 window metrics
+
+Phase 2A2 adds bounded sortable activation while preserving the complete logical
+grid. The editor uses one deterministic range manager based on the existing grid
+geometry and one `ResizeObserver`/scroll subscription. Visible and near-visible
+pages mount `SortablePageGridItem`, `useSortable`, and the thumbnail subtree;
+off-screen pages use a geometry-preserving `PageGridShell`. The active dragged page
+is pinned into the mounted ID set. Zustand remains the owner of the full `pageOrder`
+and reorder semantics.
+
+The performance and browser artifacts record `logicalPageCount`,
+`lightweightShellCount`, `mountedSortableCount`, `mountedThumbnailCount`, visible
+and overscan row ranges, grid column count, and zoom level. The mounted counts
+describe expensive DOM work; they are intentionally distinct from the logical page
+count and must not grow linearly to 500 pages.
 
 ### `sourceBytes`
 
@@ -226,3 +245,27 @@ The 500-page target was **not met**: `editorReadyMs` was 8,698 ms versus the 3,5
 The remaining bottleneck is full-DOM sortable construction and layout/measurement work: one outer sortable card and hook set is still created for every page, including off-screen pages. `content-visibility: auto` is limited to inner page content so sortable geometry remains correct; it therefore does not bound that outer cost. Phase 2B should explicitly evaluate bounded rendering/virtualization or an off-screen sortable strategy, together with thumbnail scheduling/priority, while preserving keyboard/touch behavior and stable geometry. No Phase 2B architecture is included in this qualification.
 
 The corresponding 100-page browser qualification covers first/far selection, zoom levels 1–5, multi-select and group movement, mouse/keyboard/touch drag, reorder undo, rotation, removal undo/redo, and reparsed output order/dimensions/rotation. Lifecycle tests separately verify that thumbnail-only responses do not mutate `pageOrder` and that existing stale/reset/remove/fatal-worker protections remain intact.
+
+## Phase 2A2 bounded sortable qualification
+
+Phase 2A2 bounds the remaining full-DOM sortable work identified above. The
+implementation keeps every page in the grid for stable scroll height and current
+responsive geometry, but only mounts the expensive sortable/card/thumbnail subtree
+for visible and near-visible rows. The first DnD experiment uses the mounted IDs
+with the existing `rectSortingStrategy`; global reorder still resolves against the
+full Zustand `pageOrder`. No new dependency, worker scheduling change, or DnD
+architecture migration is included.
+
+One local Windows/Headless Chrome 151 run on the Phase 2A2 branch recorded:
+
+| Pages | Parse | Editor ready | All thumbnails | Editor shell | First card usable | First visible thumbnail | First interaction | Far interaction | Sortables at shell | Shells at shell |
+|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 100 | 113 ms | 269 ms | 218 ms | 218 ms | 266 ms | 267 ms | 44 ms | 38 ms | 25 | 75 |
+| 500 | 213 ms | 540 ms | 497 ms | 497 ms | 536 ms | 538 ms | 36 ms | 34 ms | 25 | 475 |
+
+The deterministic 500-page browser qualification recorded 30 mounted sortables
+at default zoom 3 at 1440x1000, with 470 lightweight shells. Mounted sortables
+at zoom levels 1 through 5 were 56, 36, 30, 20, and 15 respectively. The far
+range mounted 30 sortables, and document scroll height remained 32,808 px before
+and after the range change. These local values are directional; the exact hosted
+CI run remains the acceptance authority.
