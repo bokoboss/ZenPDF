@@ -205,12 +205,12 @@ The Phase 1C hosted reference used for this comparison was:
 | 100 | 257 ms | 521 ms | 531 ms |
 | 500 | 261 ms | 9,860 ms | 9,868 ms |
 
-The first local Windows/Headless Chrome 151 qualification after the Phase 2A change was:
+One local Windows/Headless Chrome 151 qualification after the Phase 2A change was:
 
 | Pages | Parse | Editor ready | All thumbnails | Editor shell | First card usable | First visible thumbnail | First interaction | Far interaction | Thumbnails at shell |
 |---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| 100 | 214 ms | 299 ms | 442 ms | 293 ms | 338 ms | 343 ms | 37 ms | 45 ms | 100 |
-| 500 | 105 ms | 3,465 ms | 3,674 ms | 3,456 ms | 3,507 ms | 3,509 ms | 36 ms | 79 ms | 500 |
+| 100 | 107 ms | 208 ms | 352 ms | 201 ms | 248 ms | 253 ms | 38 ms | 42 ms | 100 |
+| 500 | 101 ms | 3,660 ms | 3,868 ms | 3,644 ms | 3,712 ms | 3,715 ms | 49 ms | 86 ms | 500 |
 
 These local values are directional evidence only. The authoritative Phase 2A gate remains the hosted Linux CI run: the 500-page `editorReadyMs` target is at or below 3,500 ms, with no material parse or 100-page regression and no timeout increase. The exact hosted result and commit are reported with the final pull request qualification.
 

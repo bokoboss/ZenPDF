@@ -37,6 +37,7 @@ test(`records a ${pageCount}-page import and thumbnail baseline`, async ({ page 
   await expect(page.getByRole('heading', { name: 'Editor' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Save PDF' })).toBeEnabled();
   const editorShellReadyAt = performance.now();
+  const thumbnailCountAtEditorShell = await page.locator('img[alt="Page"]').count();
 
   const pageSelectionControls = page.locator(
     'button[aria-label="Select page"], button[aria-label="Deselect page"]',
@@ -57,8 +58,6 @@ test(`records a ${pageCount}-page import and thumbnail baseline`, async ({ page 
   const firstVisibleThumbnail = page.locator('img[alt="Page"]').first();
   await expect(firstVisibleThumbnail).toBeVisible();
   const firstVisibleThumbnailAt = performance.now();
-
-  const thumbnailCountAtEditorShell = await page.locator('img[alt="Page"]').count();
 
   const farCard = page.locator('[data-page-id]').nth(pageCount - 1);
   await farCard.scrollIntoViewIfNeeded();
