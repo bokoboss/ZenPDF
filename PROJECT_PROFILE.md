@@ -11,7 +11,7 @@
 - Accepted branch: `main`
 - Accepted HEAD SHA: `d350b38ef347cf446ec3e28c04dac1db8a4b1aef`
 - Accepted date: 2026-08-26 (`main` commit date)
-- Current phase/milestone: Issue #3 / Phase 1A, Issue #4 / Phase 1B, and Issue #6 / Phase 1C are accepted; Issue #5 / Phase 2A large-document editor scalability is in progress
+- Current phase/milestone: Issue #3 / Phase 1A, Issue #4 / Phase 1B, and Issue #6 / Phase 1C are accepted; Issue #5 / Phase 2A bounded large-document editor work is in review on PR #11
 - Last accepted PR / CI run: PR #10 / CI run `32982880221`
 
 ## Technology stack
@@ -66,7 +66,7 @@ Changes must not alter the following unless explicitly approved:
 - PDF correctness: page count/order, source dimensions, rotation, mixed PDF/image output, and recoverable malformed-PDF behavior.
 - Required regression validation and Phase 0 guardrails.
 - Local UI runtime CSS/font dependency removal must preserve the accepted visual baseline.
-- Issue #5 / Phase 2A is the current objective; Phase 2B thumbnail scheduling/priority and true bounded rendering remain separate.
+- Issue #5 / Phase 2A bounded editor work is the current review scope; hosted 500-page editor-ready remains above target, and Phase 2B thumbnail scheduling/priority plus true bounded rendering remain separate.
 
 ## Important paths
 - Source: `App.tsx`, `components/`, `store.ts`, `types.ts`, `utils.ts`, `src/pdf/`
@@ -104,8 +104,8 @@ Changes must not alter the following unless explicitly approved:
 - The Phase 1 PDF worker is Chromium-qualified; Firefox/WebKit qualification remains pending.
 - The PDF.js worker module uses a local dynamic import/bootstrap suppression shim because `pdfjs-dist@6.2.108` auto-initializes against the host worker global.
 - Tailwind CSS is build-time local and the tested production shell has no third-party UI/font runtime requests; full offline capability beyond the tested boundary is not claimed.
-- The Phase 1C 500-page hosted baseline identifies substantial editor/grid scaling cost; Phase 2A is testing bounded editor/render amplification without redesigning the UI or introducing true virtualization.
+- The Phase 1C 500-page hosted baseline identifies substantial editor/grid scaling cost; Phase 2A reduces thumbnail-driven render amplification without redesigning the UI or introducing true virtualization, but the hosted 3,500 ms editor-ready target remains unmet.
 - Some Phase 1 test cases remain intentionally pending in `docs/TEST_MATRIX.md`.
 
 ## Current next objective
-- Qualify Issue #5 / Phase 2A on the hosted Linux runner, report the exact-head CI result, and leave thumbnail scheduling/priority and true virtualization for Phase 2B.
+- Review PR #11 against the exact hosted qualification, then scope Phase 2B thumbnail scheduling/priority and true bounded rendering separately.

@@ -212,6 +212,17 @@ One local Windows/Headless Chrome 151 qualification after the Phase 2A change wa
 | 100 | 215 ms | 347 ms | 296 ms | 296 ms | 340 ms | 342 ms | 38 ms | 42 ms | 100 |
 | 500 | 105 ms | 3,762 ms | 3,696 ms | 3,696 ms | 3,756 ms | 3,758 ms | 47 ms | 65 ms | 500 |
 
-These local values are directional evidence only. The authoritative Phase 2A gate remains the hosted Linux CI run: the 500-page `editorReadyMs` target is at or below 3,500 ms, with no material parse or 100-page regression and no timeout increase. The exact hosted result and commit are reported with the final pull request qualification.
+These local values are directional evidence only. The authoritative Phase 2A gate is the hosted Linux CI run: the 500-page `editorReadyMs` target is at or below 3,500 ms, with no material parse or 100-page regression and no timeout increase.
+
+The exact hosted Linux qualification was CI run `33072439871` at commit `8b16cd61773cf1fd2aa438d34f654b7dca188017`:
+
+| Pages | Parse | Editor ready | All thumbnails | Editor shell | First card usable | First visible thumbnail | First interaction | Far interaction | Thumbnails at shell |
+|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 100 | 267 ms | 635 ms | 517 ms | 517 ms | 625 ms | 629 ms | 93 ms | 88 ms | 100 |
+| 500 | 273 ms | 8,698 ms | 8,587 ms | 8,587 ms | 8,683 ms | 8,690 ms | 79 ms | 160 ms | 500 |
+
+The 500-page target was **not met**: `editorReadyMs` was 8,698 ms versus the 3,500 ms ceiling. This is an improvement of 1,162 ms (11.8%) over the Phase 1C hosted editor-ready reference, while parse remained comparable and the 100-page all-thumbnail result improved. The shell snapshot still contained all 500 thumbnails and the first card became usable only after the full-grid cost, so thumbnail response remapping was not the sole remaining gate.
+
+The remaining bottleneck is full-DOM sortable construction and layout/measurement work: one outer sortable card and hook set is still created for every page, including off-screen pages. `content-visibility: auto` is limited to inner page content so sortable geometry remains correct; it therefore does not bound that outer cost. Phase 2B should explicitly evaluate bounded rendering/virtualization or an off-screen sortable strategy, together with thumbnail scheduling/priority, while preserving keyboard/touch behavior and stable geometry. No Phase 2B architecture is included in this qualification.
 
 The corresponding 100-page browser qualification covers first/far selection, zoom levels 1–5, multi-select and group movement, mouse/keyboard/touch drag, reorder undo, rotation, removal undo/redo, and reparsed output order/dimensions/rotation. Lifecycle tests separately verify that thumbnail-only responses do not mutate `pageOrder` and that existing stale/reset/remove/fatal-worker protections remain intact.

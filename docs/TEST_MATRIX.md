@@ -161,6 +161,8 @@ Phase 2A browser qualification:
 - [x] The performance harness records editor shell, first-card, first-visible-thumbnail, first/far interaction, and thumbnail-count-at-shell milestones alongside the original parse/editor/all-thumbnail metrics.
 - [x] Thumbnail-only state updates preserve `pageOrder` reference stability and keep per-card thumbnail subscriptions isolated.
 
+The exact hosted Phase 2A qualification (CI run `33072439871`, commit `8b16cd61773cf1fd2aa438d34f654b7dca188017`) measured 100 pages at 267 ms parse / 635 ms editor-ready / 517 ms all thumbnails and 500 pages at 273 ms / 8,698 ms / 8,587 ms. The bounded 500-page editor-ready target of 3,500 ms was not met; the remaining full-DOM sortable construction and layout/measurement work is documented as a Phase 2B bounded-rendering/virtualization investigation, with no Phase 2B implementation included here.
+
 Phase 2 acceptance direction:
 
 - the main UI should remain interactive during parsing/rendering,
