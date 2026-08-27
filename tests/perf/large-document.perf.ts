@@ -39,12 +39,6 @@ test(`records a ${pageCount}-page import and thumbnail baseline`, async ({ page 
   const editorShellReadyAt = performance.now();
   const thumbnailCountAtEditorShell = await page.locator('img[alt="Page"]').count();
 
-  const pageSelectionControls = page.locator(
-    'button[aria-label="Select page"], button[aria-label="Deselect page"]',
-  );
-  await expect(pageSelectionControls).toHaveCount(pageCount);
-  const editorReadyAt = performance.now();
-
   const firstCard = page.locator('[data-page-id]').first();
   const firstCardControl = firstCard.locator(
     'button[aria-label="Select page"], button[aria-label="Deselect page"]',
@@ -59,6 +53,17 @@ test(`records a ${pageCount}-page import and thumbnail baseline`, async ({ page 
   await expect(firstVisibleThumbnail).toBeVisible();
   const firstVisibleThumbnailAt = performance.now();
 
+  const pageSelectionControls = page.locator(
+    'button[aria-label="Select page"], button[aria-label="Deselect page"]',
+  );
+  await expect(pageSelectionControls).toHaveCount(pageCount);
+  const editorReadyAt = performance.now();
+
+  let thumbnailsReadyAt = editorShellReadyAt;
+  if (thumbnailCountAtEditorShell < pageCount) {
+    await expect(page.locator('img[alt="Page"]')).toHaveCount(pageCount);
+    thumbnailsReadyAt = performance.now();
+  }
   const farCard = page.locator('[data-page-id]').nth(pageCount - 1);
   await farCard.scrollIntoViewIfNeeded();
   const farCardControl = farCard.locator(
@@ -69,9 +74,6 @@ test(`records a ${pageCount}-page import and thumbnail baseline`, async ({ page 
   await farCardControl.click();
   await expect(farCardControl).toHaveAttribute('aria-pressed', 'true');
   const farCardUsableAt = performance.now();
-
-  await expect(page.locator('img[alt="Page"]')).toHaveCount(pageCount);
-  const thumbnailsReadyAt = performance.now();
 
   const metrics = {
     pageCount,
