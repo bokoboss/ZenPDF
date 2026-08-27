@@ -22,8 +22,23 @@ import {
   ZoomOut, ZoomIn, Plus, Download, Save, CheckSquare, Square
 } from 'lucide-react';
 import { usePdfStore } from '../store';
-import { SortablePageGridItem } from './SortablePageGridItem';
+import { PageGridShell, SortablePageGridItem } from './SortablePageGridItem';
 import { cn } from '../utils';
+import { useWindowedPageRange } from './useWindowedPageRange';
+
+function ThumbnailProgressMarker({ gridRef }: { gridRef: React.RefObject<HTMLDivElement | null> }) {
+  const thumbnailReadyCount = usePdfStore(state => state.files.reduce(
+    (count, file) => count + file.thumbnails.filter(Boolean).length,
+    0,
+  ));
+
+  useEffect(() => {
+    const grid = gridRef.current;
+    if (grid) grid.dataset.thumbnailReadyCount = String(thumbnailReadyCount);
+  }, [gridRef, thumbnailReadyCount]);
+
+  return null;
+}
 
 export function PageEditor() {
   const pageOrder = usePdfStore(state => state.pageOrder);
@@ -49,6 +64,8 @@ export function PageEditor() {
   const [activeId, setActiveId] = useState<string | null>(null);
   const lastSelectedId = useRef<string | null>(null);
   const [zoomLevel, setZoomLevel] = useState(3);
+  const gridRef = useRef<HTMLDivElement>(null);
+  const windowRange = useWindowedPageRange(gridRef, pageOrder.length, zoomLevel);
   
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
@@ -133,7 +150,13 @@ export function PageEditor() {
     [activeId, pageOrder],
   );
   const selectedPageIdSet = useMemo(() => new Set(selectedPageIds), [selectedPageIds]);
-  const sortableIds = useMemo(() => pageOrder.map(page => page.uniqueId), [pageOrder]);
+  const mountedPageIds = useMemo(() => pageOrder
+    .filter((page, index) => (
+      (index >= windowRange.startIndex && index < windowRange.endIndex) ||
+      page.uniqueId === activeId
+    ))
+    .map(page => page.uniqueId), [activeId, pageOrder, windowRange.endIndex, windowRange.startIndex]);
+  const mountedPageIdSet = useMemo(() => new Set(mountedPageIds), [mountedPageIds]);
   const gridClass = useMemo(() => {
     switch(zoomLevel) {
       case 1: return "grid-cols-4 md:grid-cols-6 lg:grid-cols-8";
@@ -249,20 +272,41 @@ export function PageEditor() {
       </div>
 
       <DndContext sensors={sensors} collisionDetection={closestCenter} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
-        <SortableContext items={sortableIds} strategy={rectSortingStrategy}>
-          <div className={cn("grid gap-6 pb-32 transition-all duration-500 ease-out", gridClass)}>
-            {pageOrder.map(page => (
-              <SortablePageGridItem 
-                key={page.uniqueId} 
-                page={page} 
+        <SortableContext items={mountedPageIds} strategy={rectSortingStrategy}>
+          <div
+            ref={gridRef}
+            data-windowed-page-grid
+            data-logical-page-count={pageOrder.length}
+            data-lightweight-shell-count={pageOrder.length - mountedPageIds.length}
+            data-mounted-sortable-count={mountedPageIds.length}
+            data-mounted-thumbnail-count={mountedPageIds.length}
+            data-window-visible-start-row={windowRange.visibleStartRow}
+            data-window-visible-end-row={windowRange.visibleEndRow}
+            data-window-overscan-start-row={windowRange.overscanStartRow}
+            data-window-overscan-end-row={windowRange.overscanEndRow}
+            data-window-columns={windowRange.columns}
+            data-window-zoom-level={zoomLevel}
+            className={cn("grid gap-6 pb-32 transition-all duration-500 ease-out", gridClass)}
+          >
+            {pageOrder.map(page => mountedPageIdSet.has(page.uniqueId) ? (
+              <SortablePageGridItem
+                key={page.uniqueId}
+                page={page}
                 isSelected={selectedPageIdSet.has(page.uniqueId)}
-                onToggleSelect={handlePageSelect} 
-                onRotate={rotatePage} 
-                onRemove={removePage} 
+                onToggleSelect={handlePageSelect}
+                onRotate={rotatePage}
+                onRemove={removePage}
+              />
+            ) : (
+              <PageGridShell
+                key={page.uniqueId}
+                page={page}
+                isSelected={selectedPageIdSet.has(page.uniqueId)}
               />
             ))}
           </div>
         </SortableContext>
+        <ThumbnailProgressMarker gridRef={gridRef} />
         <DragOverlay>
           {activeItem ? (<div className="relative"><SortablePageGridItem page={activeItem} isOverlay />{dragCount > 1 && (<div className="absolute -top-3 -right-3 bg-stone-900 text-white text-xs font-bold w-8 h-8 flex items-center justify-center rounded-full shadow-xl border-2 border-white z-50">{dragCount}</div>)}</div>) : null}
         </DragOverlay>

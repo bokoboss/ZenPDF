@@ -16,6 +16,11 @@ interface SortablePageGridItemProps {
   isOverlay?: boolean;
 }
 
+interface PageGridShellProps {
+  page: PageItem;
+  isSelected?: boolean;
+}
+
 const PageThumbnail = memo(function PageThumbnail({ fileId, pageIndex, rotation }: { fileId: string; pageIndex: number; rotation: number }) {
   const thumbnail = usePdfStore(state => (
     state.files.find(file => file.id === fileId)?.thumbnails[pageIndex] ?? ''
@@ -29,6 +34,35 @@ const PageThumbnail = memo(function PageThumbnail({ fileId, pageIndex, rotation 
       style={{ transform: `rotate(${rotation}deg)` }}
     />
   ) : <SkeletonPage />;
+});
+
+export const PageGridShell = memo(function PageGridShell({ page, isSelected = false }: PageGridShellProps) {
+  return (
+    <div
+      data-page-shell
+      data-page-index={page.pageIndex}
+      data-page-id={page.uniqueId}
+      aria-hidden="true"
+      className={cn(
+        "relative group aspect-[3/4] bg-white rounded-2xl border overflow-hidden",
+        isSelected
+          ? "border-stone-800 ring-2 ring-stone-800 shadow-xl scale-[1.02] z-10"
+          : "border-stone-100",
+      )}
+    >
+      <div className="w-full h-full p-3 flex flex-col items-center justify-center">
+        <div className="w-full h-full bg-slate-100 flex items-center justify-center rounded-lg" data-page-placeholder>
+          <div className="w-8 h-8 bg-slate-200 rounded-full" />
+        </div>
+      </div>
+
+      <div className="absolute bottom-3 right-3 pointer-events-none">
+        <span className="text-[10px] font-bold text-stone-500 bg-stone-100/80 px-2 py-1 rounded-md backdrop-blur-sm border border-stone-200/50">
+          {page.pageIndex + 1}
+        </span>
+      </div>
+    </div>
+  );
 });
 
 export const SortablePageGridItem = memo(function SortablePageGridItem({ page, isSelected, onToggleSelect, onRotate, onRemove, isOverlay = false }: SortablePageGridItemProps) {
@@ -49,6 +83,7 @@ export const SortablePageGridItem = memo(function SortablePageGridItem({ page, i
     <div 
       ref={setNodeRef} 
       style={style} 
+      data-page-card
       data-page-index={page.pageIndex}
       data-page-id={page.uniqueId}
       className={cn(
@@ -98,7 +133,7 @@ export const SortablePageGridItem = memo(function SortablePageGridItem({ page, i
         </button>
       </div>
 
-      <div className="content-visibility-auto w-full h-full p-3 flex flex-col items-center justify-center">
+      <div data-page-thumbnail-subtree className="content-visibility-auto w-full h-full p-3 flex flex-col items-center justify-center">
         <PageThumbnail fileId={page.fileId} pageIndex={page.pageIndex} rotation={page.rotation} />
       </div>
 

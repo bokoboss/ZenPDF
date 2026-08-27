@@ -20,6 +20,20 @@ async function pageIndices(page: Page): Promise<number[]> {
   ));
 }
 
+function pageCard(page: Page, pageIndex: number): Locator {
+  return page.locator(`[data-page-card][data-page-index="${pageIndex}"]`);
+}
+
+async function scrollToLogicalPage(page: Page, pageIndex: number) {
+  const scrolled = await page.evaluate(index => {
+    const element = document.querySelector(`[data-page-id][data-page-index="${index}"]`);
+    if (!element) return false;
+    element.scrollIntoView({ block: 'center', inline: 'nearest' });
+    return true;
+  }, pageIndex);
+  if (!scrolled) throw new Error(`Could not find logical page ${pageIndex}.`);
+}
+
 async function dragWithMouse(page: Page, source: Locator, target: Locator) {
   await source.scrollIntoViewIfNeeded();
   const sourceBox = await source.boundingBox();
@@ -37,6 +51,7 @@ async function dragWithMouse(page: Page, source: Locator, target: Locator) {
   if (!targetBox) throw new Error('Could not measure the large-grid drag target.');
   await page.mouse.move(targetBox.x + targetBox.width / 2, targetBox.y + targetBox.height * 0.75, { steps: 12 });
   await page.mouse.up();
+  await page.waitForTimeout(100);
 }
 
 async function dragWithTouch(page: Page, source: Locator, target: Locator) {
@@ -75,6 +90,7 @@ async function dragWithTouch(page: Page, source: Locator, target: Locator) {
   await dispatchPointer(target, 'pointermove', targetPoint);
   await page.waitForTimeout(50);
   await dispatchPointer(target, 'pointerup', targetPoint);
+  await page.waitForTimeout(100);
 }
 
 async function gridColumnCount(page: Page): Promise<number> {
@@ -109,19 +125,16 @@ test('large editor remains interactive and preserves output semantics', async ({
 
   const cards = page.locator('[data-page-id]');
   await expect(cards).toHaveCount(100);
-  const pageControls = page.locator(
-    'button[aria-label="Select page"], button[aria-label="Deselect page"]',
-  );
-  await expect(pageControls).toHaveCount(100);
+  expect(await page.locator('[data-page-card]').count()).toBeLessThan(100);
 
-  const firstCard = page.locator('[data-page-index="0"]');
+  const firstCard = pageCard(page, 0);
   const firstControl = firstCard.locator('button[aria-label="Select page"]');
   await firstControl.click();
   await expect(firstCard.locator('button[aria-label="Deselect page"]')).toHaveAttribute('aria-pressed', 'true');
   await firstCard.locator('button[aria-label="Deselect page"]').click();
 
-  const farCard = page.locator('[data-page-index="99"]');
-  await farCard.scrollIntoViewIfNeeded();
+  await scrollToLogicalPage(page, 99);
+  const farCard = pageCard(page, 99);
   await expect(farCard).toBeVisible();
   const farControl = farCard.locator('button[aria-label="Select page"]');
   await farControl.click();
@@ -151,24 +164,25 @@ test('large editor remains interactive and preserves output semantics', async ({
   await expect.poll(() => gridColumnCount(page)).toBe(6);
   await zoomOut.click();
   await expect.poll(() => gridColumnCount(page)).toBe(8);
-  const multiFirst = page.locator('[data-page-index="20"]');
-  const multiLast = page.locator('[data-page-index="22"]');
-  await multiFirst.locator('button[aria-label="Select page"]').click();
-  await multiLast.locator('button[aria-label="Select page"]').click({ modifiers: ['Shift'] });
+  await scrollToLogicalPage(page, 20);
+  await expect(pageCard(page, 20)).toBeVisible();
+  await expect(pageCard(page, 22)).toBeVisible();
+  await pageCard(page, 20).locator('button[aria-label="Select page"]').click();
+  await pageCard(page, 22).locator('button[aria-label="Select page"]').click({ modifiers: ['Shift'] });
   for (const pageIndex of [20, 21, 22]) {
-    await expect(page.locator(`[data-page-index="${pageIndex}"] button[aria-label="Deselect page"]`))
+    await expect(pageCard(page, pageIndex).locator('button[aria-label="Deselect page"]'))
       .toHaveAttribute('aria-pressed', 'true');
   }
 
   const multiOrderBefore = await pageIndices(page);
   await dragWithMouse(
     page,
-    page.locator('[data-page-index="20"] [data-page-drag-handle]'),
-    page.locator('[data-page-index="28"] [data-page-drag-handle]'),
+    pageCard(page, 20).locator('[data-page-drag-handle]'),
+    pageCard(page, 28).locator('[data-page-drag-handle]'),
   );
   await expect.poll(() => pageIndices(page)).not.toEqual(multiOrderBefore);
   for (const pageIndex of [20, 21, 22]) {
-    await expect(page.locator(`[data-page-index="${pageIndex}"] button[aria-label="Deselect page"]`))
+    await expect(pageCard(page, pageIndex).locator('button[aria-label="Deselect page"]'))
       .toHaveAttribute('aria-pressed', 'true');
   }
   await page.getByRole('button', { name: 'Undo' }).click();
@@ -183,25 +197,27 @@ test('large editor remains interactive and preserves output semantics', async ({
   await zoomIn.click();
   await expect.poll(() => gridColumnCount(page)).toBe(5);
 
+  await scrollToLogicalPage(page, 0);
+  await expect(pageCard(page, 0)).toBeVisible();
+  await expect(pageCard(page, 1)).toBeVisible();
   const mouseOrderBefore = await pageIndices(page);
   await dragWithMouse(
     page,
-    page.locator('[data-page-index="0"] [data-page-drag-handle]'),
-    page.locator('[data-page-index="1"] [data-page-drag-handle]'),
+    pageCard(page, 0).locator('[data-page-drag-handle]'),
+    pageCard(page, 1).locator('[data-page-drag-handle]'),
   );
   await expect.poll(() => pageIndices(page)).toEqual([
     mouseOrderBefore[1], mouseOrderBefore[0], ...mouseOrderBefore.slice(2),
   ]);
 
-  const selectedAfterReorder = page.locator('[data-page-index="2"] button[aria-label="Select page"]');
-  await selectedAfterReorder.click();
-  await expect(page.locator('[data-page-index="2"] button[aria-label="Deselect page"]')).toHaveAttribute('aria-pressed', 'true');
-
   const keyboardOrderBefore = await pageIndices(page);
-  const keyboardSource = page.locator('[data-page-index="3"] [data-page-drag-handle]');
+  const keyboardSource = pageCard(page, 3).locator('[data-page-drag-handle]');
   await keyboardSource.focus();
+  await expect(keyboardSource).toBeFocused();
   await keyboardSource.press('Space');
+  await page.waitForTimeout(50);
   await keyboardSource.press('ArrowRight');
+  await page.waitForTimeout(50);
   await keyboardSource.press('Space');
   await expect.poll(() => pageIndices(page)).not.toEqual(keyboardOrderBefore);
   await page.getByRole('button', { name: 'Undo' }).click();
@@ -210,28 +226,30 @@ test('large editor remains interactive and preserves output semantics', async ({
   const touchOrderBefore = await pageIndices(page);
   await dragWithTouch(
     page,
-    page.locator('[data-page-index="6"] [data-page-drag-handle]'),
-    page.locator('[data-page-index="7"] [data-page-drag-handle]'),
+    pageCard(page, 6).locator('[data-page-drag-handle]'),
+    pageCard(page, 7).locator('[data-page-drag-handle]'),
   );
   await expect.poll(() => pageIndices(page)).not.toEqual(touchOrderBefore);
   await page.getByRole('button', { name: 'Undo' }).click();
   await expect.poll(() => pageIndices(page)).toEqual(touchOrderBefore);
 
-  await expect(page.locator('img[alt="Page"]')).toHaveCount(100);
-  const rotatedCard = page.locator('[data-page-index="2"]');
+  await expect(page.locator('[data-page-id]')).toHaveCount(100);
+  const rotatedCard = pageCard(page, 2);
   await centerCardInViewport(rotatedCard);
+  await rotatedCard.locator('button[aria-label="Select page"]').click();
+  await expect(rotatedCard.locator('button[aria-label="Deselect page"]')).toHaveAttribute('aria-pressed', 'true');
   await rotatedCard.locator('button[aria-label="Rotate page clockwise"]').click();
   await expect(rotatedCard.locator('img[alt="Page"]')).toHaveAttribute('style', /rotate\(90deg\)/);
 
-  const removedCard = page.locator('[data-page-index="3"]');
+  const removedCard = pageCard(page, 3);
   await centerCardInViewport(removedCard);
   await removedCard.locator('button[aria-label="Remove page"]').click();
-  await expect(page.locator('[data-page-index="3"]')).toHaveCount(0);
+  await expect(pageCard(page, 3)).toHaveCount(0);
   await page.getByRole('button', { name: 'Undo' }).click();
-  await expect(page.locator('[data-page-index="3"]')).toHaveCount(1);
+  await expect(pageCard(page, 3)).toHaveCount(1);
   await page.getByRole('button', { name: 'Redo' }).click();
-  await expect(page.locator('[data-page-index="3"]')).toHaveCount(0);
-  await expect(page.locator('[data-page-index="2"] button[aria-label="Deselect page"]')).toHaveAttribute('aria-pressed', 'true');
+  await expect(pageCard(page, 3)).toHaveCount(0);
+  await expect(pageCard(page, 2).locator('button[aria-label="Deselect page"]')).toHaveAttribute('aria-pressed', 'true');
 
   await page.getByRole('button', { name: 'Save PDF' }).click();
   await expect(page.getByRole('link', { name: 'Download' })).toBeVisible();
