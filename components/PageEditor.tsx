@@ -97,6 +97,7 @@ export function PageEditor() {
   const addFiles = usePdfStore(state => state.addFiles);
   const [activeId, setActiveId] = useState<string | null>(null);
   const lastSelectedId = useRef<string | null>(null);
+  const nonePointerIdRef = useRef<number | null>(null);
   const [zoomLevel, setZoomLevel] = useState(3);
   const gridRef = useRef<HTMLDivElement>(null);
   const undoButtonRef = useRef<HTMLButtonElement>(null);
@@ -192,6 +193,33 @@ export function PageEditor() {
       state.togglePageSelection(id);
       lastSelectedId.current = id;
     }
+  }, []);
+
+  const handleDeselectAllPages = useCallback(() => {
+    lastSelectedId.current = null;
+    deselectAllPages();
+  }, [deselectAllPages]);
+
+  const handleNonePointerDown = useCallback((event: React.PointerEvent<HTMLButtonElement>) => {
+    nonePointerIdRef.current = event.isPrimary && event.button === 0 ? event.pointerId : null;
+  }, []);
+
+  const handleNonePointerUp = useCallback((event: React.PointerEvent<HTMLButtonElement>) => {
+    const shouldDeselect = (
+      event.isPrimary &&
+      event.button === 0 &&
+      nonePointerIdRef.current === event.pointerId
+    );
+    nonePointerIdRef.current = null;
+    if (shouldDeselect) handleDeselectAllPages();
+  }, [handleDeselectAllPages]);
+
+  const handleNonePointerCancel = useCallback(() => {
+    nonePointerIdRef.current = null;
+  }, []);
+
+  const handleNonePointerLeave = useCallback((event: React.PointerEvent<HTMLButtonElement>) => {
+    if (event.buttons !== 0) nonePointerIdRef.current = null;
   }, []);
 
   const handleEditorAddFiles = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
@@ -300,7 +328,18 @@ export function PageEditor() {
             <button type="button" onClick={selectAllPages} className="flex items-center gap-2 px-3 py-2 text-xs font-semibold uppercase tracking-wider text-stone-500 hover:bg-stone-100 rounded-xl transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-stone-800 focus-visible:ring-offset-2">
               <CheckSquare size={16} /> All
             </button>
-            <button type="button" onClick={deselectAllPages} disabled={selectedPageIds.length === 0} className="flex items-center gap-2 px-3 py-2 text-xs font-semibold uppercase tracking-wider text-stone-400 hover:text-stone-600 hover:bg-stone-50 rounded-xl transition-colors disabled:opacity-30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-stone-800 focus-visible:ring-offset-2">
+            <button
+              type="button"
+              onPointerDown={handleNonePointerDown}
+              onPointerUp={handleNonePointerUp}
+              onPointerCancel={handleNonePointerCancel}
+              onPointerLeave={handleNonePointerLeave}
+              onClick={(event) => {
+                if (event.detail === 0) handleDeselectAllPages();
+              }}
+              disabled={selectedPageIds.length === 0}
+              className="flex items-center gap-2 px-3 py-2 text-xs font-semibold uppercase tracking-wider text-stone-400 hover:text-stone-600 hover:bg-stone-50 rounded-xl transition-colors disabled:opacity-30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-stone-800 focus-visible:ring-offset-2"
+            >
               <Square size={16} /> None
             </button>
             {selectedPageIds.length > 0 && (

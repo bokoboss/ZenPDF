@@ -152,11 +152,23 @@ test('editor controls expose names, selection count, provenance, and output posi
   await expect(page.locator('[data-page-card][data-output-position="1"]')).toHaveAttribute('data-page-index', '0');
 
   await page.getByRole('button', { name: 'None' }).click();
-  await page.getByRole('group', { name: /source Alpha\.pdf page 2/ })
-    .getByRole('button', { name: 'Select page' })
-    .click();
+  await expect(page.getByRole('status', { name: '2 selected' })).toBeHidden();
+  await expect(page.locator('[data-page-card] button[aria-pressed="true"]')).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Extract selected pages' })).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'Rotate selected pages' })).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'Delete selected pages' })).toBeDisabled();
+
+  const alphaPage1 = page.getByRole('group', { name: /source Alpha\.pdf page 1/ });
+  const alphaPage2 = page.getByRole('group', { name: /source Alpha\.pdf page 2/ });
+  await alphaPage2.getByRole('button', { name: 'Select page' }).click();
+  await expect(page.getByRole('status', { name: '1 selected' })).toBeVisible();
+  await expect(alphaPage2.getByRole('button', { name: 'Deselect page' })).toHaveAttribute('aria-pressed', 'true');
+  await expect(alphaPage1.getByRole('button', { name: 'Select page' })).toHaveAttribute('aria-pressed', 'false');
+
   await page.getByRole('button', { name: 'Delete selected pages' }).click();
   await expect(page.locator('[data-page-card]')).toHaveCount(3);
+  await expect(alphaPage1).toBeVisible();
+  await expect(alphaPage2).toHaveCount(0);
   await expect(page.locator('[data-page-card][data-output-position="1"]')).toContainText(/Beta\.pdf/);
   await expect(page.locator('[data-page-card][data-output-position="2"]')).toContainText(/Alpha\.pdf/);
   await expect(page.locator('[data-page-card][data-output-position="3"]')).toContainText(/Beta\.pdf/);
@@ -171,6 +183,99 @@ test('editor controls expose names, selection count, provenance, and output posi
   expect(output.getPage(0).getWidth()).toBeCloseTo(400, 1);
   expect(output.getPage(1).getWidth()).toBeCloseTo(200, 1);
   expect(output.getPage(2).getWidth()).toBeCloseTo(420, 1);
+});
+
+
+test('None clears selection inside the post-drag pointer lifecycle', async ({ page }) => {
+  const source = await makePdf('selection-lifecycle', [
+    { width: 200, height: 300 },
+    { width: 220, height: 320 },
+    { width: 240, height: 340 },
+    { width: 260, height: 360 },
+  ]);
+
+  await enterEditor(page, [{ name: 'selection-lifecycle.pdf', mimeType: 'application/pdf', buffer: source }]);
+
+  const cards = page.locator('[data-page-card]');
+  await cards.nth(0).getByRole('button', { name: 'Select page' }).click();
+  await cards.nth(1).getByRole('button', { name: 'Select page' }).click({ modifiers: ['Shift'] });
+  await expect(page.getByRole('status', { name: '2 selected' })).toBeVisible();
+
+  const noneButton = page.getByRole('button', { name: 'None' });
+  await noneButton.dispatchEvent('pointerup', {
+    bubbles: true,
+    cancelable: true,
+    pointerId: 98,
+    pointerType: 'mouse',
+    isPrimary: true,
+    button: 0,
+    buttons: 0,
+  });
+  await expect(page.getByRole('status', { name: '2 selected' })).toBeVisible();
+
+  await noneButton.dispatchEvent('pointerdown', {
+    bubbles: true,
+    cancelable: true,
+    pointerId: 97,
+    pointerType: 'mouse',
+    isPrimary: true,
+    button: 2,
+    buttons: 2,
+  });
+  await noneButton.dispatchEvent('pointerup', {
+    bubbles: true,
+    cancelable: true,
+    pointerId: 97,
+    pointerType: 'mouse',
+    isPrimary: true,
+    button: 2,
+    buttons: 0,
+  });
+  await expect(page.getByRole('status', { name: '2 selected' })).toBeVisible();
+
+  await page.evaluate(() => {
+    const noneButton = Array.from(document.querySelectorAll<HTMLButtonElement>('button'))
+      .find(button => button.textContent?.trim() === 'None');
+    if (!noneButton) throw new Error('None button not found.');
+
+    const activateNone = () => {
+      queueMicrotask(() => {
+        noneButton.dispatchEvent(new PointerEvent('pointerdown', {
+          bubbles: true,
+          cancelable: true,
+          pointerId: 99,
+          pointerType: 'mouse',
+          isPrimary: true,
+          button: 0,
+          buttons: 1,
+        }));
+        noneButton.dispatchEvent(new PointerEvent('pointerup', {
+          bubbles: true,
+          cancelable: true,
+          pointerId: 99,
+          pointerType: 'mouse',
+          isPrimary: true,
+          button: 0,
+          buttons: 0,
+        }));
+        noneButton.click();
+      });
+    };
+
+    window.addEventListener('pointerup', activateNone, { once: true });
+  });
+
+  await dragWithMouse(
+    page,
+    cards.nth(3).locator('[data-page-drag-handle]'),
+    cards.nth(0).locator('[data-page-drag-handle]'),
+  );
+
+  await expect(page.getByRole('status', { name: '2 selected' })).toBeHidden();
+  await expect(page.locator('[data-page-card] button[aria-pressed="true"]')).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Extract selected pages' })).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'Rotate selected pages' })).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'Delete selected pages' })).toBeDisabled();
 });
 
 test('routine success toast is polite and does not steal focus', async ({ page }) => {
