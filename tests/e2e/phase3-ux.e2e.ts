@@ -201,6 +201,38 @@ test('None clears selection inside the post-drag pointer lifecycle', async ({ pa
   await cards.nth(1).getByRole('button', { name: 'Select page' }).click({ modifiers: ['Shift'] });
   await expect(page.getByRole('status', { name: '2 selected' })).toBeVisible();
 
+  const noneButton = page.getByRole('button', { name: 'None' });
+  await noneButton.dispatchEvent('pointerup', {
+    bubbles: true,
+    cancelable: true,
+    pointerId: 98,
+    pointerType: 'mouse',
+    isPrimary: true,
+    button: 0,
+    buttons: 0,
+  });
+  await expect(page.getByRole('status', { name: '2 selected' })).toBeVisible();
+
+  await noneButton.dispatchEvent('pointerdown', {
+    bubbles: true,
+    cancelable: true,
+    pointerId: 97,
+    pointerType: 'mouse',
+    isPrimary: true,
+    button: 2,
+    buttons: 2,
+  });
+  await noneButton.dispatchEvent('pointerup', {
+    bubbles: true,
+    cancelable: true,
+    pointerId: 97,
+    pointerType: 'mouse',
+    isPrimary: true,
+    button: 2,
+    buttons: 0,
+  });
+  await expect(page.getByRole('status', { name: '2 selected' })).toBeVisible();
+
   await page.evaluate(() => {
     const noneButton = Array.from(document.querySelectorAll<HTMLButtonElement>('button'))
       .find(button => button.textContent?.trim() === 'None');
