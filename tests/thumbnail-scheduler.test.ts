@@ -3,6 +3,7 @@ import type { PDFDocumentProxy } from 'pdfjs-dist';
 import { PdfDomainError } from '../src/pdf/errors';
 import type { PdfOperationContext } from '../src/pdf/operations/parse';
 import {
+  createThumbnailRenderLimiter,
   createThumbnailScheduler,
   MAX_CONCURRENT_THUMBNAILS,
 } from '../src/pdf/operations/thumbnails';
@@ -27,6 +28,41 @@ function fakeDocument(): PDFDocumentProxy {
 }
 
 describe('thumbnail priority scheduler', () => {
+  it('shares the render limit across concurrent parse schedulers', async () => {
+    const limiter = createThumbnailRenderLimiter(MAX_CONCURRENT_THUMBNAILS);
+    const started: string[] = [];
+    let active = 0;
+    let maxActive = 0;
+
+    const createScheduler = (fileId: string) => createThumbnailScheduler(
+      fakeDocument(),
+      2,
+      context(),
+      () => undefined,
+      {
+        renderLimiter: limiter,
+        renderPage: async pageIndex => {
+          started.push(`${fileId}:${pageIndex}`);
+          active += 1;
+          maxActive = Math.max(maxActive, active);
+          await new Promise(resolve => setTimeout(resolve, 1));
+          active -= 1;
+          return new Blob([`${fileId}-${pageIndex}`]);
+        },
+      },
+    );
+
+    const first = createScheduler('first');
+    const second = createScheduler('second');
+    await Promise.all([first.done, second.done]);
+
+    expect(started).toHaveLength(4);
+    expect(maxActive).toBeLessThanOrEqual(MAX_CONCURRENT_THUMBNAILS);
+    expect(limiter.getMaxObservedConcurrency()).toBe(MAX_CONCURRENT_THUMBNAILS);
+    expect(first.getMetrics().maxObservedConcurrency).toBe(MAX_CONCURRENT_THUMBNAILS);
+    expect(second.getMetrics().maxObservedConcurrency).toBe(MAX_CONCURRENT_THUMBNAILS);
+  });
+
   it('starts page zero first and never exceeds the configured concurrency', async () => {
     const started: number[] = [];
     const completed: number[] = [];

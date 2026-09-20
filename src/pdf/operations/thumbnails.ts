@@ -23,6 +23,13 @@ export type ThumbnailPageRenderer = (
 export interface ThumbnailSchedulerOptions {
   maxConcurrency?: number;
   renderPage?: ThumbnailPageRenderer;
+  renderLimiter?: ThumbnailRenderLimiter;
+}
+
+export interface ThumbnailRenderLimiter {
+  tryAcquire(): (() => void) | null;
+  onAvailable(listener: () => void): () => void;
+  getMaxObservedConcurrency(): number;
 }
 
 export interface ThumbnailScheduler {
@@ -59,6 +66,47 @@ function normalizePriority(pageIndexes: readonly number[], pageCount: number): n
     result.push(pageIndex);
   }
   return result;
+}
+
+export function createThumbnailRenderLimiter(
+  maxConcurrency = MAX_CONCURRENT_THUMBNAILS,
+): ThumbnailRenderLimiter {
+  const capacity = Math.max(1, Math.floor(maxConcurrency));
+  let activeCount = 0;
+  let maxObservedConcurrency = 0;
+  let notificationIndex = 0;
+  const listeners = new Set<() => void>();
+
+  const notifyAvailable = () => {
+    const snapshot = [...listeners];
+    if (snapshot.length === 0) return;
+    const start = notificationIndex % snapshot.length;
+    for (let offset = 0; offset < snapshot.length && activeCount < capacity; offset += 1) {
+      snapshot[(start + offset) % snapshot.length]?.();
+    }
+    notificationIndex = (start + 1) % snapshot.length;
+  };
+
+  return {
+    tryAcquire: () => {
+      if (activeCount >= capacity) return null;
+      activeCount += 1;
+      maxObservedConcurrency = Math.max(maxObservedConcurrency, activeCount);
+      let released = false;
+      return () => {
+        if (released) return;
+        released = true;
+        activeCount -= 1;
+        notifyAvailable();
+      };
+    },
+    onAvailable: listener => {
+      listeners.add(listener);
+      notificationIndex = Math.max(0, listeners.size - 1);
+      return () => listeners.delete(listener);
+    },
+    getMaxObservedConcurrency: () => maxObservedConcurrency,
+  };
 }
 
 export async function renderThumbnail(
@@ -112,6 +160,7 @@ export function createThumbnailScheduler(
   const renderPage = options.renderPage ?? (
     (pageIndex, renderContext) => renderThumbnail(document, pageIndex + 1, renderContext)
   );
+  const renderLimiter = options.renderLimiter ?? createThumbnailRenderLimiter(configuredMaxConcurrency);
   const queued = new Set<number>();
   for (let pageIndex = 0; pageIndex < pageCount; pageIndex += 1) queued.add(pageIndex);
 
@@ -135,6 +184,7 @@ export function createThumbnailScheduler(
   });
   let cancellationCompletion: Promise<void> | null = null;
   let resolveCancellation: (() => void) | null = null;
+  let unsubscribeLimiter: () => void = () => undefined;
 
   const metrics: ThumbnailSchedulerMetrics = {
     configuredMaxConcurrency,
@@ -165,6 +215,8 @@ export function createThumbnailScheduler(
         resolveDone();
       }
     }
+
+    if (settled) unsubscribeLimiter();
 
     if (cancelRequested && resolveCancellation) {
       const resolve = resolveCancellation;
@@ -204,6 +256,11 @@ export function createThumbnailScheduler(
     return undefined;
   };
 
+  const returnPageToQueue = (pageIndex: number) => {
+    if (currentPriority.includes(pageIndex)) priorityQueue.unshift(pageIndex);
+    else backgroundQueue.unshift(pageIndex);
+  };
+
   const requeuePage = (pageIndex: number) => {
     queued.add(pageIndex);
     if (currentPriority.includes(pageIndex)) priorityQueue.push(pageIndex);
@@ -226,7 +283,10 @@ export function createThumbnailScheduler(
         pageIndex,
         inFlight: activeCount,
         configuredMaxConcurrency: metrics.configuredMaxConcurrency,
-        maxObservedConcurrency: metrics.maxObservedConcurrency,
+        maxObservedConcurrency: Math.max(
+          metrics.maxObservedConcurrency,
+          renderLimiter.getMaxObservedConcurrency(),
+        ),
         duplicateSuccessfulRenders: metrics.duplicateSuccessfulRenders,
         reprioritizationCount: metrics.reprioritizationCount,
         renderCancellationCount: metrics.renderCancellationCount,
@@ -276,14 +336,23 @@ export function createThumbnailScheduler(
     while (activeCount < configuredMaxConcurrency) {
       const pageIndex = takeNextPage();
       if (pageIndex === undefined) break;
+      const releaseRender = renderLimiter.tryAcquire();
+      if (!releaseRender) {
+        returnPageToQueue(pageIndex);
+        break;
+      }
       queued.delete(pageIndex);
       inFlight.add(pageIndex);
       activeCount += 1;
       metrics.activeCount = activeCount;
-      metrics.maxObservedConcurrency = Math.max(metrics.maxObservedConcurrency, activeCount);
+      metrics.maxObservedConcurrency = Math.max(
+        metrics.maxObservedConcurrency,
+        renderLimiter.getMaxObservedConcurrency(),
+      );
 
       const renderPromise = runPage(pageIndex);
       void renderPromise.finally(() => {
+        releaseRender();
         inFlight.delete(pageIndex);
         activeCount -= 1;
         metrics.activeCount = activeCount;
@@ -327,10 +396,15 @@ export function createThumbnailScheduler(
     },
     getMetrics: () => ({
       ...metrics,
+      maxObservedConcurrency: Math.max(
+        metrics.maxObservedConcurrency,
+        renderLimiter.getMaxObservedConcurrency(),
+      ),
       completedPageIndexes: [...metrics.completedPageIndexes],
     }),
   };
 
+  unsubscribeLimiter = renderLimiter.onAvailable(pump);
   pump();
   return scheduler;
 }

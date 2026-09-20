@@ -92,17 +92,11 @@ function measureRange(grid: HTMLElement | null, pageCount: number): PageWindowRa
   };
 }
 
-export function measureWindowedPageRange(
-  grid: HTMLElement | null,
-  pageCount: number,
-): PageWindowRange | null {
-  return measureRange(grid, pageCount);
-}
-
 export function useWindowedPageRange(
   gridRef: RefObject<HTMLDivElement | null>,
   pageCount: number,
   zoomLevel: number,
+  onRangeMeasured?: (range: PageWindowRange) => void,
 ): PageWindowRange {
   const [range, setRange] = useState(() => initialRange(pageCount));
 
@@ -112,6 +106,7 @@ export function useWindowedPageRange(
     const updateRange = () => {
       const measured = measureRange(gridRef.current, pageCount);
       if (!measured) return;
+      onRangeMeasured?.(measured);
       setRange(previous => sameRange(previous, measured) ? previous : measured);
     };
 
@@ -123,10 +118,8 @@ export function useWindowedPageRange(
       });
     };
 
-    const updateOnScroll = () => updateRange();
-
     updateRange();
-    window.addEventListener('scroll', updateOnScroll, { passive: true });
+    window.addEventListener('scroll', scheduleUpdate, { passive: true });
     window.addEventListener('resize', scheduleUpdate);
     const observer = typeof ResizeObserver === 'undefined'
       ? null
@@ -134,12 +127,12 @@ export function useWindowedPageRange(
     if (gridRef.current) observer?.observe(gridRef.current);
 
     return () => {
-      window.removeEventListener('scroll', updateOnScroll);
+      window.removeEventListener('scroll', scheduleUpdate);
       window.removeEventListener('resize', scheduleUpdate);
       observer?.disconnect();
       if (frame !== 0) window.cancelAnimationFrame(frame);
     };
-  }, [gridRef, pageCount, zoomLevel]);
+  }, [gridRef, onRangeMeasured, pageCount, zoomLevel]);
 
   return range;
 }

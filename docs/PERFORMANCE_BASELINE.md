@@ -112,8 +112,9 @@ The Phase 2B harness runs against generated real-content PDFs in
 - duplicate successful renders, reprioritization count, and render-cancellation
   count.
 
-The scheduler is configured at `MAX_CONCURRENT_THUMBNAILS = 2`. The vector
-fixture contains 120 deterministic text/line/rectangle-heavy pages. The
+The worker-wide scheduler limiter is configured at
+`MAX_CONCURRENT_THUMBNAILS = 2`, including when multiple parse tasks are
+active. The vector fixture contains 120 deterministic text/line/rectangle-heavy pages. The
 raster fixture contains 100 deterministic pages with unique generated PNG
 content tiled across each page. Both are local, reproducible, dependency-free,
 and contain no network or copyrighted input.

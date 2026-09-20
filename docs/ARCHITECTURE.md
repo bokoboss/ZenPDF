@@ -98,8 +98,8 @@ envelopes and invalid page indexes before they can mutate worker state.
 - A parse emits `FILE_PARSED` after PDF metadata is available, then owns one
   bounded thumbnail scheduler until every page completes or the task is
   cancelled. The scheduler starts with page 0 for the Documents-stage preview,
-  accepts deduplicated viewport priorities, keeps at most two renders active,
-  and eventually drains all queued pages.
+  accepts deduplicated viewport priorities, shares a worker-wide two-render
+  limit across parse tasks, and eventually drains all queued pages.
 - Scheduler cancellation settles active renders before `PDFDocumentProxy.cleanup()`
   runs. Worker task cleanup is an aggregated, reverse-ordered callback list so
   a scheduler, PDF.js loading task, and any future task resource can all be

@@ -6,7 +6,10 @@ import {
   type WorkerResponse,
 } from './protocol';
 import { loadPdfDocument, type PdfOperationContext } from './operations/parse';
-import { createThumbnailScheduler } from './operations/thumbnails';
+import {
+  createThumbnailRenderLimiter,
+  createThumbnailScheduler,
+} from './operations/thumbnails';
 import { extractPages, mergeFiles, mergePages } from './operations/merge';
 
 interface WorkerScope {
@@ -27,6 +30,7 @@ const cancelledTasks = new Set<string>();
 let activeSessionId: string | null = null;
 let disposed = false;
 let pdfJsWorkerModule: Promise<unknown> | null = null;
+const thumbnailRenderLimiter = createThumbnailRenderLimiter();
 
 function ensurePdfJsWorkerModule(): Promise<unknown> {
   if (pdfJsWorkerModule) return pdfJsWorkerModule;
@@ -128,11 +132,17 @@ async function runParse(request: Extract<WorkerRequest, { type: 'PARSE_FILE' }>)
   try {
     ensureActive(context);
     post(request.sessionId, request.taskId, 'FILE_PARSED', { fileId, pageCount: document.numPages });
-    const scheduler = createThumbnailScheduler(document, document.numPages, context, (pageIndex, blob) => {
-      if (!context.isCancelled()) {
-        post(request.sessionId, request.taskId, 'THUMBNAIL_GENERATED', { fileId, pageIndex, blob });
-      }
-    });
+    const scheduler = createThumbnailScheduler(
+      document,
+      document.numPages,
+      context,
+      (pageIndex, blob) => {
+        if (!context.isCancelled()) {
+          post(request.sessionId, request.taskId, 'THUMBNAIL_GENERATED', { fileId, pageIndex, blob });
+        }
+      },
+      { renderLimiter: thumbnailRenderLimiter },
+    );
     const task = activeTasks.get(request.taskId);
     if (task) {
       task.setThumbnailPriority = (targetFileId, orderedPageIndexes) => {

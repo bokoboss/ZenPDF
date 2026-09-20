@@ -24,7 +24,7 @@ import {
 import { usePdfStore } from '../store';
 import { PageGridShell, SortablePageGridItem } from './SortablePageGridItem';
 import { cn } from '../utils';
-import { measureWindowedPageRange, useWindowedPageRange, type PageWindowRange } from './useWindowedPageRange';
+import { useWindowedPageRange, type PageWindowRange } from './useWindowedPageRange';
 import { thumbnailPriorityByFile } from './thumbnailPriority';
 
 function ThumbnailProgressMarker({ gridRef }: { gridRef: React.RefObject<HTMLDivElement | null> }) {
@@ -99,7 +99,6 @@ export function PageEditor() {
   const lastSelectedId = useRef<string | null>(null);
   const [zoomLevel, setZoomLevel] = useState(3);
   const gridRef = useRef<HTMLDivElement>(null);
-  const windowRange = useWindowedPageRange(gridRef, pageOrder.length, zoomLevel);
   const prioritySignatures = useRef(new Map<string, string>());
   const sendThumbnailPriorities = useCallback((range: PageWindowRange) => {
     if (!workerClient) return;
@@ -123,19 +122,16 @@ export function PageEditor() {
       }
     }
   }, [pageOrder, parseTaskIds, workerClient]);
+  const windowRange = useWindowedPageRange(
+    gridRef,
+    pageOrder.length,
+    zoomLevel,
+    sendThumbnailPriorities,
+  );
 
   useEffect(() => {
     sendThumbnailPriorities(windowRange);
   }, [sendThumbnailPriorities, windowRange]);
-
-  useEffect(() => {
-    const handleScroll = () => {
-      const measured = measureWindowedPageRange(gridRef.current, pageOrder.length);
-      if (measured) sendThumbnailPriorities(measured);
-    };
-    window.addEventListener('scroll', handleScroll, { passive: true });
-    return () => window.removeEventListener('scroll', handleScroll);
-  }, [pageOrder.length, sendThumbnailPriorities]);
   
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
