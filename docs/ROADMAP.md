@@ -94,18 +94,18 @@ Goal: improve usability while preserving the existing ZenPDF visual language.
 
 Audit reference: `docs/UX_AUDIT_NO_REDESIGN.md`.
 
-- [ ] Qualify/improve touch interactions where hover is currently relevant
-- [ ] Complete keyboard and focus behavior review
-- [ ] Clarify output-page position versus original source page number
-- [ ] Add document/page provenance where useful
-- [ ] Add per-file error/retry states using Phase 1 typed errors
-- [ ] Review destructive-action confidence/undo behavior
-- [ ] Review mobile toolbar density and reachability
-- [ ] Improve same-file re-selection in the Editor-stage file input
-- [ ] Complete accessible names for icon-only editor controls
+- [x] Qualify/improve touch interactions where hover is currently relevant
+- [x] Complete keyboard and focus behavior review
+- [x] Clarify output-page position versus original source page number
+- [x] Add document/page provenance where useful
+- [x] Add per-file error states using Phase 1 typed errors
+- [x] Review destructive-action confidence/undo behavior
+- [x] Review mobile toolbar density and reachability
+- [x] Improve same-file re-selection in the Editor-stage file input
+- [x] Complete accessible names for icon-only editor controls
 - [ ] Evaluate whether the 3-step flow should ever evolve into a persistent workspace
 
-Phase 0 already exposes per-page actions on keyboard focus and adds accessible labels/focus treatment without changing established styling. A full keyboard/touch review remains outstanding.
+Phase 3 completes the bounded keyboard/touch/focus review without changing established styling. Direct malformed-file retry, filename customization, shortcut discoverability, and persistent-workspace exploration remain post-v1 or future UX decisions.
 
 Important: a unified workspace may be explored, but only if it can retain the established premium, calm design. This is a UX decision, not a mandate to redesign the app.
 

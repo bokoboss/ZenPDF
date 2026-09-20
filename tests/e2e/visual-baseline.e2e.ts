@@ -62,17 +62,17 @@ test('capture protected ZenPDF visual baseline', async ({ page }) => {
     fontSize: '18px',
     lineHeight: '29.25px',
   });
-  expect(await computedStyle(page, 'nav > div:first-child span')).toMatchObject({
+  expect(await computedStyle(page, 'nav > button:first-child span')).toMatchObject({
     fontFamily: EXPECTED_SYSTEM_FONT,
     fontWeight: '500',
     fontSize: '20px',
     lineHeight: '28px',
     letterSpacing: '-0.5px',
   });
-  expect(await computedStyle(page, 'nav')).toMatchObject({
+  expect(await computedStyle(page, 'nav.sticky')).toMatchObject({
     rect: { width: 1440, height: 80 },
   });
-  expect(await computedStyle(page, 'div.relative.w-full.max-w-xl')).toMatchObject({
+  expect(await computedStyle(page, 'button.relative.w-full.max-w-xl')).toMatchObject({
     backgroundColor: 'rgba(255, 255, 255, 0.5)',
     borderRadius: '40px',
     rect: { width: 576, height: 320 },

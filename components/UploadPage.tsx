@@ -27,6 +27,11 @@ export function UploadPage() {
     }
   };
 
+  const handleFileSelection = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files?.length) addFiles(Array.from(e.target.files));
+    e.target.value = '';
+  };
+
   return (
     <div className="flex flex-col items-center justify-center min-h-[80vh] p-6 animate-in fade-in duration-700">
       <div className="text-center mb-12">
@@ -39,14 +44,16 @@ export function UploadPage() {
         </p>
       </div>
       
-      <div 
+      <button
+        type="button"
+        aria-label="Upload documents"
         onDragOver={(e) => { e.preventDefault(); setIsDragOver(true); }} 
         onDragEnter={handleDragEnter}
         onDragLeave={handleDragLeave}
         onDrop={handleDrop} 
         onClick={() => inputRef.current?.click()} 
         className={cn(
-            "relative w-full max-w-xl h-80 rounded-[2.5rem] border border-dashed flex flex-col items-center justify-center cursor-pointer overflow-hidden transition-all duration-500 ease-out group", 
+            "relative w-full max-w-xl h-80 rounded-[2.5rem] border border-dashed flex flex-col items-center justify-center cursor-pointer overflow-hidden transition-all duration-500 ease-out group appearance-none text-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-stone-800 focus-visible:ring-offset-4",
             isDragOver 
               ? "border-stone-400 bg-stone-50 scale-[1.02] shadow-2xl shadow-stone-200/50" 
               : "border-stone-200 bg-white/50 hover:bg-white hover:border-stone-300 hover:shadow-xl hover:shadow-stone-200/30",
@@ -69,8 +76,8 @@ export function UploadPage() {
             Drag & drop or click to browse
         </p>
 
-        <input type="file" multiple accept=".pdf, .jpg, .jpeg, .png" ref={inputRef} className="hidden" onChange={(e) => { if (e.target.files) addFiles(Array.from(e.target.files)) }} />
-      </div>
+      </button>
+      <input type="file" multiple accept=".pdf, .jpg, .jpeg, .png" ref={inputRef} className="hidden" onChange={handleFileSelection} />
 
       <div className="mt-16 flex flex-col items-center gap-8">
         <div className="flex items-center gap-6 opacity-60 hover:opacity-100 transition-opacity duration-300">

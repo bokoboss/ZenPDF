@@ -494,7 +494,7 @@ export const usePdfStore = create<PdfStore>((set, get) => {
 
     initPageEditor: () => {
       const { files } = get();
-      if (files.length === 0) return;
+      if (files.length === 0 || files.some(file => file.status === 'error' || file.pageCount <= 0)) return;
       invalidateMergedOutput();
       const pages: PageItem[] = [];
       files.forEach(file => {
@@ -617,7 +617,7 @@ export const usePdfStore = create<PdfStore>((set, get) => {
 
     mergeFiles: () => {
       const { workerClient, files, isSaving } = get();
-      if (!workerClient || files.length === 0 || isSaving) return;
+      if (!workerClient || files.length === 0 || files.some(file => file.status === 'error') || isSaving) return;
       invalidateMergedOutput();
       const task = workerClient.mergeFiles(files.map(file => ({ id: file.id, file: file.file })));
       set({ isSaving: true, saveTaskId: task.taskId });
@@ -627,9 +627,11 @@ export const usePdfStore = create<PdfStore>((set, get) => {
       const { workerClient, files, pageOrder, isSaving } = get();
       if (!workerClient || pageOrder.length === 0 || isSaving) return;
       invalidateMergedOutput();
+      const referencedFileIds = new Set(pageOrder.map(page => page.fileId));
+      const referencedFiles = files.filter(file => referencedFileIds.has(file.id));
       const pages = pageOrder.map(({ uniqueId, fileId, pageIndex, rotation }) => ({ uniqueId, fileId, pageIndex, rotation }));
       const task = workerClient.mergePages(
-        files.map(file => ({ id: file.id, file: file.file })),
+        referencedFiles.map(file => ({ id: file.id, file: file.file })),
         pages,
       );
       set({ isSaving: true, saveTaskId: task.taskId });

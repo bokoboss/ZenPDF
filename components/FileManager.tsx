@@ -43,8 +43,9 @@ export function FileManager() {
         </div>
         <div className="flex gap-3">
           <button 
+            type="button"
             onClick={() => document.getElementById('add-more')?.click()} 
-            className="group flex items-center gap-2 px-5 py-2.5 text-sm font-medium text-stone-600 bg-white border border-stone-200 rounded-2xl hover:bg-stone-50 hover:border-stone-300 transition-all shadow-sm"
+            className="group flex items-center gap-2 px-5 py-2.5 text-sm font-medium text-stone-600 bg-white border border-stone-200 rounded-2xl hover:bg-stone-50 hover:border-stone-300 transition-all shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-stone-800 focus-visible:ring-offset-2"
           >
             <Plus size={16} className="text-stone-400 group-hover:text-stone-600 transition-colors" />
             Add File
@@ -78,9 +79,10 @@ export function FileManager() {
              </a>
           ) : (
              <button 
+                type="button"
                 onClick={mergeFiles} 
-                disabled={files.length === 0 || isSaving} 
-                className="w-full py-4 bg-white border border-stone-200 text-stone-700 rounded-2xl font-medium text-lg hover:bg-stone-50 hover:border-stone-300 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-3 shadow-sm hover:shadow-md"
+                disabled={files.length === 0 || files.some(file => file.status === 'error') || isSaving}
+                className="w-full py-4 bg-white border border-stone-200 text-stone-700 rounded-2xl font-medium text-lg hover:bg-stone-50 hover:border-stone-300 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-3 shadow-sm hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-stone-800 focus-visible:ring-offset-2"
              >
                 {isSaving ? <Loader2 className="animate-spin" size={20} /> : <Zap size={20} strokeWidth={1.5} className="text-stone-400" />} 
                 Quick Merge
@@ -88,9 +90,10 @@ export function FileManager() {
           )}
           
           <button 
+            type="button"
             onClick={initPageEditor} 
-            disabled={!isEditorReady || isSaving} 
-            className="w-full py-4 bg-stone-100 text-stone-900 rounded-2xl font-medium text-lg hover:bg-stone-200 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-3"
+            disabled={!isEditorReady || files.some(file => file.status === 'error') || isSaving}
+            className="w-full py-4 bg-stone-100 text-stone-900 rounded-2xl font-medium text-lg hover:bg-stone-200 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-stone-800 focus-visible:ring-offset-2"
           >
             <Grid size={20} strokeWidth={1.5} /> 
             Page Editor

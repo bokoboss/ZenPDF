@@ -99,6 +99,8 @@ export function PageEditor() {
   const lastSelectedId = useRef<string | null>(null);
   const [zoomLevel, setZoomLevel] = useState(3);
   const gridRef = useRef<HTMLDivElement>(null);
+  const undoButtonRef = useRef<HTMLButtonElement>(null);
+  const pendingPageFocusRef = useRef<string | 'toolbar' | null>(null);
   const prioritySignatures = useRef(new Map<string, string>());
   const sendThumbnailPriorities = useCallback((range: PageWindowRange) => {
     if (!workerClient) return;
@@ -198,6 +200,36 @@ export function PageEditor() {
     event.target.value = '';
   }, [addFiles]);
 
+  const handlePageRemove = useCallback((id: string) => {
+    const state = usePdfStore.getState();
+    const index = state.pageOrder.findIndex(page => page.uniqueId === id);
+    if (index === -1) return;
+    const nextPage = state.pageOrder[index + 1] ?? state.pageOrder[index - 1];
+    pendingPageFocusRef.current = nextPage?.uniqueId ?? 'toolbar';
+    removePage(id);
+  }, [removePage]);
+
+  useEffect(() => {
+    const pendingFocus = pendingPageFocusRef.current;
+    if (!pendingFocus) return;
+    pendingPageFocusRef.current = null;
+
+    const frame = window.requestAnimationFrame(() => {
+      if (pendingFocus === 'toolbar') {
+        undoButtonRef.current?.focus();
+        return;
+      }
+      const pageCard = Array.from(document.querySelectorAll<HTMLElement>('[data-page-card]'))
+        .find(card => card.dataset.pageId === pendingFocus);
+      pageCard?.querySelector<HTMLElement>('[data-page-focus-control]')?.focus();
+      if (!document.activeElement || document.activeElement === document.body) {
+        undoButtonRef.current?.focus();
+      }
+    });
+
+    return () => window.cancelAnimationFrame(frame);
+  }, [pageOrder, canUndo]);
+
   const handleDragStart = useCallback((event: DragStartEvent) => { setActiveId(event.active.id as string); }, []);
   const handleDragEnd = useCallback((event: DragEndEvent) => {
     const { active, over } = event;
@@ -214,6 +246,13 @@ export function PageEditor() {
   const activeItem = useMemo(
     () => activeId ? pageOrder.find(p => p.uniqueId === activeId) ?? null : null,
     [activeId, pageOrder],
+  );
+  const activeOutputPosition = activeItem
+    ? pageOrder.findIndex(page => page.uniqueId === activeItem.uniqueId) + 1
+    : 0;
+  const sourceFileCount = useMemo(
+    () => new Set(pageOrder.map(page => page.fileId)).size,
+    [pageOrder],
   );
   const selectedPageIdSet = useMemo(() => new Set(selectedPageIds), [selectedPageIds]);
   const mountedPageIds = useMemo(() => pageOrder
@@ -241,9 +280,10 @@ export function PageEditor() {
       <div className="flex items-center justify-between mb-8 px-2">
         <div className="flex items-center gap-6">
           <button 
+            type="button"
             onClick={() => setPage(2)} 
             aria-label="Back to documents"
-            className="w-10 h-10 flex items-center justify-center rounded-full bg-white border border-stone-200 text-stone-500 hover:text-stone-900 hover:border-stone-300 transition-all shadow-sm"
+            className="w-10 h-10 flex items-center justify-center rounded-full bg-white border border-stone-200 text-stone-500 hover:text-stone-900 hover:border-stone-300 transition-all shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-stone-800 focus-visible:ring-offset-2"
             title="Back to Files"
           >
             <ArrowLeft size={20} />
@@ -255,44 +295,55 @@ export function PageEditor() {
         </div>
       </div>
 
-      <div className="sticky top-24 z-40 bg-white/90 backdrop-blur-2xl border border-stone-200/50 shadow-xl shadow-stone-200/30 rounded-[2rem] px-3 py-3 mb-10 flex flex-wrap items-center justify-between gap-4 transition-all">
-         <div className="flex items-center gap-2 pl-3">
-            <button onClick={selectAllPages} className="flex items-center gap-2 px-3 py-2 text-xs font-semibold uppercase tracking-wider text-stone-500 hover:bg-stone-100 rounded-xl transition-colors">
+      <div data-editor-toolbar className="sticky top-24 z-40 bg-white/90 backdrop-blur-2xl border border-stone-200/50 shadow-xl shadow-stone-200/30 rounded-[2rem] px-2 sm:px-3 py-3 mb-10 flex flex-wrap items-center justify-between gap-3 sm:gap-4 transition-all">
+         <div className="flex min-w-0 flex-wrap items-center gap-1 sm:gap-2 pl-1 sm:pl-3">
+            <button type="button" onClick={selectAllPages} className="flex items-center gap-2 px-3 py-2 text-xs font-semibold uppercase tracking-wider text-stone-500 hover:bg-stone-100 rounded-xl transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-stone-800 focus-visible:ring-offset-2">
               <CheckSquare size={16} /> All
             </button>
-            <button onClick={deselectAllPages} disabled={selectedPageIds.length === 0} className="flex items-center gap-2 px-3 py-2 text-xs font-semibold uppercase tracking-wider text-stone-400 hover:text-stone-600 hover:bg-stone-50 rounded-xl transition-colors disabled:opacity-30">
+            <button type="button" onClick={deselectAllPages} disabled={selectedPageIds.length === 0} className="flex items-center gap-2 px-3 py-2 text-xs font-semibold uppercase tracking-wider text-stone-400 hover:text-stone-600 hover:bg-stone-50 rounded-xl transition-colors disabled:opacity-30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-stone-800 focus-visible:ring-offset-2">
               <Square size={16} /> None
             </button>
-            <div className="h-6 w-px bg-stone-200 mx-2"></div>
+            {selectedPageIds.length > 0 && (
+              <span role="status" aria-label={`${selectedPageIds.length} selected`} aria-live="polite" aria-atomic="true" className="px-2 py-1 text-xs font-medium text-stone-500 whitespace-nowrap">
+                {selectedPageIds.length} selected
+              </span>
+            )}
+            <div className="h-6 w-px bg-stone-200 mx-1 sm:mx-2"></div>
             <div className="flex items-center gap-1">
-               <button onClick={undo} disabled={!canUndo} aria-label="Undo" title="Undo" className="p-2 hover:bg-stone-100 rounded-xl text-stone-600 disabled:opacity-30 transition-colors"><Undo2 size={18} strokeWidth={1.5} /></button>
-               <button onClick={redo} disabled={!canRedo} aria-label="Redo" title="Redo" className="p-2 hover:bg-stone-100 rounded-xl text-stone-600 disabled:opacity-30 transition-colors"><Redo2 size={18} strokeWidth={1.5} /></button>
+               <button ref={undoButtonRef} type="button" onClick={undo} disabled={!canUndo} aria-label="Undo" title="Undo" className="p-2 hover:bg-stone-100 rounded-xl text-stone-600 disabled:opacity-30 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-stone-800 focus-visible:ring-offset-2"><Undo2 size={18} strokeWidth={1.5} /></button>
+               <button type="button" onClick={redo} disabled={!canRedo} aria-label="Redo" title="Redo" className="p-2 hover:bg-stone-100 rounded-xl text-stone-600 disabled:opacity-30 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-stone-800 focus-visible:ring-offset-2"><Redo2 size={18} strokeWidth={1.5} /></button>
             </div>
             
-            <div className="h-6 w-px bg-stone-200 mx-2"></div>
-            <div className="flex items-center gap-2">
-                <button 
-                    onClick={extractSelectedPages} 
-                    disabled={selectedPageIds.length === 0 || isExtracting} 
-                    className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-stone-700 bg-stone-50 hover:bg-stone-100 rounded-xl transition-all disabled:opacity-40 disabled:hover:bg-stone-50"
+            <div className="h-6 w-px bg-stone-200 mx-1 sm:mx-2"></div>
+            <div className="flex flex-wrap items-center gap-1 sm:gap-2">
+                <button
+                    type="button"
+                    onClick={extractSelectedPages}
+                    disabled={selectedPageIds.length === 0 || isExtracting}
+                    aria-label="Extract selected pages"
+                    className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-stone-700 bg-stone-50 hover:bg-stone-100 rounded-xl transition-all disabled:opacity-40 disabled:hover:bg-stone-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-stone-800 focus-visible:ring-offset-2"
                     title="Extract selected pages"
                 >
                     {isExtracting ? <Loader2 size={16} className="animate-spin" /> : <Scissors size={16} strokeWidth={1.5} />}
                     <span className="hidden sm:inline">Extract</span>
                 </button>
-                <button 
-                    onClick={rotateSelectedPages} 
-                    disabled={selectedPageIds.length === 0} 
-                    className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-stone-700 bg-stone-50 hover:bg-stone-100 rounded-xl transition-all disabled:opacity-40 disabled:hover:bg-stone-50"
+                <button
+                    type="button"
+                    onClick={rotateSelectedPages}
+                    disabled={selectedPageIds.length === 0}
+                    aria-label="Rotate selected pages"
+                    className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-stone-700 bg-stone-50 hover:bg-stone-100 rounded-xl transition-all disabled:opacity-40 disabled:hover:bg-stone-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-stone-800 focus-visible:ring-offset-2"
                     title="Rotate selected pages"
                 >
                     <RotateCw size={16} strokeWidth={1.5} />
                     <span className="hidden sm:inline">Rotate</span>
                 </button>
-                <button 
-                    onClick={removeSelectedPages} 
-                    disabled={selectedPageIds.length === 0} 
-                    className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-red-600 bg-red-50 hover:bg-red-100 rounded-xl transition-all disabled:opacity-40 disabled:hover:bg-red-50 disabled:text-stone-400"
+                <button
+                    type="button"
+                    onClick={removeSelectedPages}
+                    disabled={selectedPageIds.length === 0}
+                    aria-label="Delete selected pages"
+                    className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-red-600 bg-red-50 hover:bg-red-100 rounded-xl transition-all disabled:opacity-40 disabled:hover:bg-red-50 disabled:text-stone-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-stone-800 focus-visible:ring-offset-2"
                     title="Delete selected pages"
                 >
                     <Trash2 size={16} strokeWidth={1.5} />
@@ -301,36 +352,39 @@ export function PageEditor() {
             </div>
          </div>
 
-         <div className="flex items-center gap-4 pr-2">
+         <div className="flex min-w-0 flex-wrap items-center justify-end gap-2 sm:gap-4 pr-1 sm:pr-2">
             <div className="flex items-center gap-2 bg-stone-100/80 p-1.5 rounded-full border border-stone-200/50">
-                <button onClick={() => setZoomLevel(z => Math.max(1, z - 1))} aria-label="Zoom out" title="Zoom out" className="w-7 h-7 flex items-center justify-center hover:bg-white rounded-full text-stone-500 shadow-sm transition-all"><ZoomOut size={14} /></button>
+                <button type="button" onClick={() => setZoomLevel(z => Math.max(1, z - 1))} aria-label="Zoom out" title="Zoom out" className="w-7 h-7 flex items-center justify-center hover:bg-white rounded-full text-stone-500 shadow-sm transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-stone-800 focus-visible:ring-offset-2"><ZoomOut size={14} /></button>
                 <div className="w-16 h-1 bg-stone-200 rounded-full overflow-hidden">
                     <div className="h-full bg-stone-800 transition-all duration-300" style={{ width: `${zoomLevel * 20}%` }}></div>
                 </div>
-                <button onClick={() => setZoomLevel(z => Math.min(5, z + 1))} aria-label="Zoom in" title="Zoom in" className="w-7 h-7 flex items-center justify-center hover:bg-white rounded-full text-stone-500 shadow-sm transition-all"><ZoomIn size={14} /></button>
+                <button type="button" onClick={() => setZoomLevel(z => Math.min(5, z + 1))} aria-label="Zoom in" title="Zoom in" className="w-7 h-7 flex items-center justify-center hover:bg-white rounded-full text-stone-500 shadow-sm transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-stone-800 focus-visible:ring-offset-2"><ZoomIn size={14} /></button>
             </div>
             
-            <button onClick={() => document.getElementById('add-file-editor')?.click()} aria-label="Add files" title="Add files" className="w-10 h-10 flex items-center justify-center bg-white text-stone-600 border border-stone-200 rounded-full hover:bg-stone-50 hover:border-stone-300 transition-all shadow-sm">
+            <button type="button" onClick={() => document.getElementById('add-file-editor')?.click()} aria-label="Add files" title="Add files" className="w-10 h-10 flex items-center justify-center bg-white text-stone-600 border border-stone-200 rounded-full hover:bg-stone-50 hover:border-stone-300 transition-all shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-stone-800 focus-visible:ring-offset-2">
                 <Plus size={20} strokeWidth={1.5} />
             </button>
             <input id="add-file-editor" type="file" multiple accept=".pdf, .jpg, .jpeg, .png" className="hidden" onChange={handleEditorAddFiles} />
 
             {/* SAVE BUTTON */}
             {mergedUrl ? (
-                <a 
-                    href={mergedUrl} 
+                <a
+                    href={mergedUrl}
                     download={`ZenPDF_Merged_${Date.now()}.pdf`}
-                    className="px-6 py-2.5 bg-stone-900 text-white hover:bg-stone-800 rounded-full text-sm font-medium flex items-center gap-2 shadow-lg shadow-stone-300 animate-in fade-in active:scale-95 transition-all"
+                    aria-label="Download"
+                    className="px-6 py-2.5 bg-stone-900 text-white hover:bg-stone-800 rounded-full text-sm font-medium flex items-center gap-2 shadow-lg shadow-stone-300 animate-in fade-in active:scale-95 transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-stone-800 focus-visible:ring-offset-2"
                 >
                     <Download size={16} /> Download
                 </a>
             ) : (
-                <button 
-                    onClick={mergePages} 
+                <button
+                    type="button"
+                    onClick={mergePages}
                     disabled={isSaving || pageOrder.length === 0}
-                    className="px-6 py-2.5 bg-stone-900 text-white hover:bg-stone-800 rounded-full text-sm font-medium flex items-center gap-2 shadow-lg shadow-stone-300 disabled:opacity-50 disabled:cursor-not-allowed active:scale-95 transition-all"
+                    aria-label="Save PDF"
+                    className="px-6 py-2.5 bg-stone-900 text-white hover:bg-stone-800 rounded-full text-sm font-medium flex items-center gap-2 shadow-lg shadow-stone-300 disabled:opacity-50 disabled:cursor-not-allowed active:scale-95 transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-stone-800 focus-visible:ring-offset-2"
                 >
-                    {isSaving ? <Loader2 className="animate-spin" size={16} /> : <Save size={16} />} 
+                    {isSaving ? <Loader2 className="animate-spin" size={16} /> : <Save size={16} />}
                     Save PDF
                 </button>
             )}
@@ -354,19 +408,22 @@ export function PageEditor() {
             data-window-zoom-level={zoomLevel}
             className={cn("grid gap-6 pb-32 transition-all duration-500 ease-out", gridClass)}
           >
-            {pageOrder.map(page => mountedPageIdSet.has(page.uniqueId) ? (
+            {pageOrder.map((page, index) => mountedPageIdSet.has(page.uniqueId) ? (
               <SortablePageGridItem
                 key={page.uniqueId}
                 page={page}
+                outputPosition={index + 1}
+                showProvenance={sourceFileCount > 1 || index + 1 !== page.pageIndex + 1}
                 isSelected={selectedPageIdSet.has(page.uniqueId)}
                 onToggleSelect={handlePageSelect}
                 onRotate={rotatePage}
-                onRemove={removePage}
+                onRemove={handlePageRemove}
               />
             ) : (
               <PageGridShell
                 key={page.uniqueId}
                 page={page}
+                outputPosition={index + 1}
                 isSelected={selectedPageIdSet.has(page.uniqueId)}
               />
             ))}
@@ -374,7 +431,7 @@ export function PageEditor() {
         </SortableContext>
         <ThumbnailProgressMarker gridRef={gridRef} />
         <DragOverlay>
-          {activeItem ? (<div className="relative"><SortablePageGridItem page={activeItem} isOverlay />{dragCount > 1 && (<div className="absolute -top-3 -right-3 bg-stone-900 text-white text-xs font-bold w-8 h-8 flex items-center justify-center rounded-full shadow-xl border-2 border-white z-50">{dragCount}</div>)}</div>) : null}
+          {activeItem ? (<div className="relative"><SortablePageGridItem page={activeItem} outputPosition={activeOutputPosition} isOverlay />{dragCount > 1 && (<div className="absolute -top-3 -right-3 bg-stone-900 text-white text-xs font-bold w-8 h-8 flex items-center justify-center rounded-full shadow-xl border-2 border-white z-50">{dragCount}</div>)}</div>) : null}
         </DragOverlay>
       </DndContext>
     </div>

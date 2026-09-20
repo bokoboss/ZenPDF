@@ -9,10 +9,11 @@
 
 ## Current accepted baseline
 - Accepted branch: `main`
-- Accepted HEAD SHA: `c25576f16ef3ba2334bc27d3ab7a2facfe06e297`
-- Accepted date: task-provided Phase 2B baseline
-- Current phase/milestone: Issue #3 / Phase 1A, Issue #4 / Phase 1B, Issue #6 / Phase 1C, Issue #5 / Phase 2A, and Issue #12 / Phase 2A2 are accepted on `main`; Issue #14 / Phase 2B viewport-priority thumbnail scheduling is in review on this feature branch
-- Last accepted PR / CI run: not re-queried for this Phase 2B baseline
+- Accepted HEAD SHA: `7774887092750c1f195ab0ae4e11bed2790e2f31`
+- Accepted date: task-provided Phase 3 baseline
+- Current phase/milestone: Issue #3 / Phase 1A, Issue #4 / Phase 1B, Issue #6 / Phase 1C, Issue #5 / Phase 2A, Issue #12 / Phase 2A2, and Issue #14 / Phase 2B are accepted on `main`; Issue #16 / Phase 3 UX and accessibility finishing is in progress on this feature branch
+- Umbrella tracking: Issue #5 remains open
+- Last accepted PR / CI run: not re-queried for this Phase 3 baseline
 
 ## Technology stack
 - Languages: TypeScript
@@ -108,4 +109,4 @@ Changes must not alter the following unless explicitly approved:
 - Some Phase 1 test cases remain intentionally pending in `docs/TEST_MATRIX.md`.
 
 ## Current next objective
-- Complete the Issue #14 real-content qualification and review, while keeping persistent document caching, a full virtual-grid DnD migration, and unrelated UI work separately scoped.
+- Complete Issue #16 UX/accessibility and page-provenance qualification without changing the accepted visual design, while keeping worker redesign, persistent document caching, a full virtual-grid DnD migration, and unrelated UI work separately scoped.
