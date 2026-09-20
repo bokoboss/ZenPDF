@@ -152,11 +152,23 @@ test('editor controls expose names, selection count, provenance, and output posi
   await expect(page.locator('[data-page-card][data-output-position="1"]')).toHaveAttribute('data-page-index', '0');
 
   await page.getByRole('button', { name: 'None' }).click();
-  await page.getByRole('group', { name: /source Alpha\.pdf page 2/ })
-    .getByRole('button', { name: 'Select page' })
-    .click();
+  await expect(page.getByRole('status', { name: '2 selected' })).toBeHidden();
+  await expect(page.locator('[data-page-card] button[aria-pressed="true"]')).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Extract selected pages' })).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'Rotate selected pages' })).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'Delete selected pages' })).toBeDisabled();
+
+  const alphaPage1 = page.getByRole('group', { name: /source Alpha\.pdf page 1/ });
+  const alphaPage2 = page.getByRole('group', { name: /source Alpha\.pdf page 2/ });
+  await alphaPage2.getByRole('button', { name: 'Select page' }).click();
+  await expect(page.getByRole('status', { name: '1 selected' })).toBeVisible();
+  await expect(alphaPage2.getByRole('button', { name: 'Deselect page' })).toHaveAttribute('aria-pressed', 'true');
+  await expect(alphaPage1.getByRole('button', { name: 'Select page' })).toHaveAttribute('aria-pressed', 'false');
+
   await page.getByRole('button', { name: 'Delete selected pages' }).click();
   await expect(page.locator('[data-page-card]')).toHaveCount(3);
+  await expect(alphaPage1).toBeVisible();
+  await expect(alphaPage2).toHaveCount(0);
   await expect(page.locator('[data-page-card][data-output-position="1"]')).toContainText(/Beta\.pdf/);
   await expect(page.locator('[data-page-card][data-output-position="2"]')).toContainText(/Alpha\.pdf/);
   await expect(page.locator('[data-page-card][data-output-position="3"]')).toContainText(/Beta\.pdf/);
