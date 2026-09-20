@@ -173,6 +173,39 @@ test('editor controls expose names, selection count, provenance, and output posi
   expect(output.getPage(2).getWidth()).toBeCloseTo(420, 1);
 });
 
+
+test('None clears selection immediately after mouse drag completion', async ({ page }) => {
+  const source = await makePdf('selection-lifecycle', [
+    { width: 200, height: 300 },
+    { width: 220, height: 320 },
+    { width: 240, height: 340 },
+    { width: 260, height: 360 },
+  ]);
+
+  await enterEditor(page, [{ name: 'selection-lifecycle.pdf', mimeType: 'application/pdf', buffer: source }]);
+
+  const cards = page.locator('[data-page-card]');
+  await cards.nth(0).getByRole('button', { name: 'Select page' }).click();
+  await cards.nth(1).getByRole('button', { name: 'Select page' }).click({ modifiers: ['Shift'] });
+  await expect(page.getByRole('status', { name: '2 selected' })).toBeVisible();
+
+  await dragWithMouse(
+    page,
+    cards.nth(3).locator('[data-page-drag-handle]'),
+    cards.nth(0).locator('[data-page-drag-handle]'),
+  );
+
+  // Intentionally exercise None immediately after mouse-up. dnd-kit keeps a
+  // short post-drag click guard, so this is the release-blocking lifecycle edge.
+  await page.getByRole('button', { name: 'None' }).click();
+
+  await expect(page.getByRole('status', { name: '2 selected' })).toBeHidden();
+  await expect(page.locator('[data-page-card] button[aria-pressed="true"]')).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Extract selected pages' })).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'Rotate selected pages' })).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'Delete selected pages' })).toBeDisabled();
+});
+
 test('routine success toast is polite and does not steal focus', async ({ page }) => {
   const source = await makePdf('toast', [{ width: 200, height: 300 }]);
   await enterEditor(page, [{ name: 'toast.pdf', mimeType: 'application/pdf', buffer: source }]);
