@@ -92,6 +92,13 @@ function measureRange(grid: HTMLElement | null, pageCount: number): PageWindowRa
   };
 }
 
+export function measureWindowedPageRange(
+  grid: HTMLElement | null,
+  pageCount: number,
+): PageWindowRange | null {
+  return measureRange(grid, pageCount);
+}
+
 export function useWindowedPageRange(
   gridRef: RefObject<HTMLDivElement | null>,
   pageCount: number,
@@ -116,8 +123,10 @@ export function useWindowedPageRange(
       });
     };
 
+    const updateOnScroll = () => updateRange();
+
     updateRange();
-    window.addEventListener('scroll', scheduleUpdate, { passive: true });
+    window.addEventListener('scroll', updateOnScroll, { passive: true });
     window.addEventListener('resize', scheduleUpdate);
     const observer = typeof ResizeObserver === 'undefined'
       ? null
@@ -125,7 +134,7 @@ export function useWindowedPageRange(
     if (gridRef.current) observer?.observe(gridRef.current);
 
     return () => {
-      window.removeEventListener('scroll', scheduleUpdate);
+      window.removeEventListener('scroll', updateOnScroll);
       window.removeEventListener('resize', scheduleUpdate);
       observer?.disconnect();
       if (frame !== 0) window.cancelAnimationFrame(frame);

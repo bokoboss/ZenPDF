@@ -9,10 +9,10 @@
 
 ## Current accepted baseline
 - Accepted branch: `main`
-- Accepted HEAD SHA: `ba43fd2009078167cc89f61ead73f3438a5914b1`
-- Accepted date: 2026-08-27 (`main` commit date)
-- Current phase/milestone: Issue #3 / Phase 1A, Issue #4 / Phase 1B, and Issue #6 / Phase 1C are accepted; Issue #5 / Phase 2A is accepted on `main`; Issue #12 / Phase 2A2 bounded sortable activation is in review on the feature branch
-- Last accepted PR / CI run: PR #11 / CI run `33072439871`
+- Accepted HEAD SHA: `c25576f16ef3ba2334bc27d3ab7a2facfe06e297`
+- Accepted date: task-provided Phase 2B baseline
+- Current phase/milestone: Issue #3 / Phase 1A, Issue #4 / Phase 1B, Issue #6 / Phase 1C, Issue #5 / Phase 2A, and Issue #12 / Phase 2A2 are accepted on `main`; Issue #14 / Phase 2B viewport-priority thumbnail scheduling is in review on this feature branch
+- Last accepted PR / CI run: not re-queried for this Phase 2B baseline
 
 ## Technology stack
 - Languages: TypeScript
@@ -66,7 +66,7 @@ Changes must not alter the following unless explicitly approved:
 - PDF correctness: page count/order, source dimensions, rotation, mixed PDF/image output, and recoverable malformed-PDF behavior.
 - Required regression validation and Phase 0 guardrails.
 - Local UI runtime CSS/font dependency removal must preserve the accepted visual baseline.
-- Issue #12 / Phase 2A2 bounded sortable activation is the current review scope; the full logical grid and current DnD semantics remain in place, while true full virtual-grid DnD and worker thumbnail scheduling remain separate.
+- Issue #12 / Phase 2A2 bounded sortable activation remains the editor baseline; the full logical grid and current DnD semantics remain in place while Issue #14 adds bounded worker thumbnail scheduling and viewport priority.
 
 ## Important paths
 - Source: `App.tsx`, `components/`, `store.ts`, `types.ts`, `utils.ts`, `src/pdf/`
@@ -104,8 +104,8 @@ Changes must not alter the following unless explicitly approved:
 - The Phase 1 PDF worker is Chromium-qualified; Firefox/WebKit qualification remains pending.
 - The PDF.js worker module uses a local dynamic import/bootstrap suppression shim because `pdfjs-dist@6.2.108` auto-initializes against the host worker global.
 - Tailwind CSS is build-time local and the tested production shell has no third-party UI/font runtime requests; full offline capability beyond the tested boundary is not claimed.
-- Phase 2A2 bounds mounted sortable work for large documents without redesigning the UI or changing the worker protocol; hosted CI run `33083372374` meets the branch's mounted-work and performance gates.
+- Phase 2A2 bounds mounted sortable work for large documents without redesigning the UI. Phase 2B adds a typed priority control and a bounded two-render scheduler without a persistent PDF-document cache; hosted CI remains the acceptance authority for both editor and thumbnail metrics.
 - Some Phase 1 test cases remain intentionally pending in `docs/TEST_MATRIX.md`.
 
 ## Current next objective
-- Review the Phase 2A2 branch against the exact hosted qualification, then keep any full virtual-grid DnD migration or worker thumbnail scheduling separately scoped.
+- Complete the Issue #14 real-content qualification and review, while keeping persistent document caching, a full virtual-grid DnD migration, and unrelated UI work separately scoped.

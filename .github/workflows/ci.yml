@@ -76,6 +76,11 @@ jobs:
           ZENPDF_PERF_PAGES: 500
         run: npm run benchmark:pdf
 
+      - name: Record Phase 2B real-content scheduling qualification
+        env:
+          ZENPDF_PHASE_2B_PERF: 1
+        run: npm run benchmark:pdf
+
       - name: Upload visual baseline
         if: always()
         uses: actions/upload-artifact@v7

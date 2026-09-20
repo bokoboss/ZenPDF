@@ -24,18 +24,50 @@ import {
 import { usePdfStore } from '../store';
 import { PageGridShell, SortablePageGridItem } from './SortablePageGridItem';
 import { cn } from '../utils';
-import { useWindowedPageRange } from './useWindowedPageRange';
+import { measureWindowedPageRange, useWindowedPageRange, type PageWindowRange } from './useWindowedPageRange';
+import { thumbnailPriorityByFile } from './thumbnailPriority';
 
 function ThumbnailProgressMarker({ gridRef }: { gridRef: React.RefObject<HTMLDivElement | null> }) {
   const thumbnailReadyCount = usePdfStore(state => state.files.reduce(
     (count, file) => count + file.thumbnails.filter(Boolean).length,
     0,
   ));
+  const thumbnailReadyPages = usePdfStore(state => state.files.flatMap(file => (
+    file.thumbnails
+      .map((thumbnail, pageIndex) => thumbnail ? `${file.id}:${pageIndex}` : '')
+      .filter(Boolean)
+  )).join(','));
+  const thumbnailMetrics = usePdfStore(state => state.thumbnailMetrics);
 
   useEffect(() => {
     const grid = gridRef.current;
     if (grid) grid.dataset.thumbnailReadyCount = String(thumbnailReadyCount);
   }, [gridRef, thumbnailReadyCount]);
+
+  useEffect(() => {
+    const grid = gridRef.current;
+    if (grid) grid.dataset.thumbnailReadyPages = thumbnailReadyPages;
+  }, [gridRef, thumbnailReadyPages]);
+
+  useEffect(() => {
+    const grid = gridRef.current;
+    if (!grid) return;
+    grid.dataset.thumbnailConfiguredConcurrency = thumbnailMetrics
+      ? String(thumbnailMetrics.configuredMaxConcurrency)
+      : '';
+    grid.dataset.thumbnailMaxObservedConcurrency = thumbnailMetrics
+      ? String(thumbnailMetrics.maxObservedConcurrency)
+      : '';
+    grid.dataset.thumbnailDuplicateSuccessfulRenders = thumbnailMetrics
+      ? String(thumbnailMetrics.duplicateSuccessfulRenders)
+      : '';
+    grid.dataset.thumbnailReprioritizationCount = thumbnailMetrics
+      ? String(thumbnailMetrics.reprioritizationCount)
+      : '';
+    grid.dataset.thumbnailRenderCancellationCount = thumbnailMetrics
+      ? String(thumbnailMetrics.renderCancellationCount)
+      : '';
+  }, [gridRef, thumbnailMetrics]);
 
   return null;
 }
@@ -49,6 +81,8 @@ export function PageEditor() {
   const isExtracting = usePdfStore(state => state.isExtracting);
   const mergedUrl = usePdfStore(state => state.mergedUrl);
   const extractedUrl = usePdfStore(state => state.extractedUrl);
+  const parseTaskIds = usePdfStore(state => state.parseTaskIds);
+  const workerClient = usePdfStore(state => state.workerClient);
   const undo = usePdfStore(state => state.undo);
   const redo = usePdfStore(state => state.redo);
   const rotatePage = usePdfStore(state => state.rotatePage);
@@ -66,6 +100,42 @@ export function PageEditor() {
   const [zoomLevel, setZoomLevel] = useState(3);
   const gridRef = useRef<HTMLDivElement>(null);
   const windowRange = useWindowedPageRange(gridRef, pageOrder.length, zoomLevel);
+  const prioritySignatures = useRef(new Map<string, string>());
+  const sendThumbnailPriorities = useCallback((range: PageWindowRange) => {
+    if (!workerClient) return;
+
+    const nextFileIds = new Set<string>();
+    for (const [fileId, orderedPageIndexes] of thumbnailPriorityByFile(pageOrder, range)) {
+      const taskId = parseTaskIds[fileId];
+      if (!taskId) continue;
+
+      const signature = `${taskId}:${orderedPageIndexes.join(',')}`;
+      nextFileIds.add(fileId);
+      if (prioritySignatures.current.get(fileId) === signature) continue;
+
+      workerClient.setThumbnailPriority(taskId, fileId, orderedPageIndexes);
+      prioritySignatures.current.set(fileId, signature);
+    }
+
+    for (const fileId of prioritySignatures.current.keys()) {
+      if (!nextFileIds.has(fileId) || !parseTaskIds[fileId]) {
+        prioritySignatures.current.delete(fileId);
+      }
+    }
+  }, [pageOrder, parseTaskIds, workerClient]);
+
+  useEffect(() => {
+    sendThumbnailPriorities(windowRange);
+  }, [sendThumbnailPriorities, windowRange]);
+
+  useEffect(() => {
+    const handleScroll = () => {
+      const measured = measureWindowedPageRange(gridRef.current, pageOrder.length);
+      if (measured) sendThumbnailPriorities(measured);
+    };
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, [pageOrder.length, sendThumbnailPriorities]);
   
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),

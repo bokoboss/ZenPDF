@@ -6,7 +6,7 @@ import {
   type WorkerResponse,
 } from './protocol';
 import { loadPdfDocument, type PdfOperationContext } from './operations/parse';
-import { renderThumbnails } from './operations/thumbnails';
+import { createThumbnailScheduler } from './operations/thumbnails';
 import { extractPages, mergeFiles, mergePages } from './operations/merge';
 
 interface WorkerScope {
@@ -16,7 +16,9 @@ interface WorkerScope {
 
 interface ActiveTask {
   operation: PdfOperation;
-  cleanup?: () => void | Promise<void>;
+  cleanupCallbacks: Array<() => void | Promise<void>>;
+  cleanupPromise?: Promise<void>;
+  setThumbnailPriority?: (fileId: string, orderedPageIndexes: readonly number[]) => void;
 }
 
 const workerScope = globalThis as unknown as WorkerScope;
@@ -76,15 +78,37 @@ function contextFor(taskId: string, operation: PdfOperation): PdfOperationContex
   const task = activeTasks.get(taskId);
   return {
     isCancelled: () => disposed || cancelledTasks.has(taskId),
-    onProgress: (completed, total, phase) => {
+    onProgress: (completed, total, phase, thumbnail) => {
       if (!disposed && !cancelledTasks.has(taskId)) {
-        post(activeSessionId as string, taskId, 'TASK_PROGRESS', { operation, phase, completed, total });
+        post(activeSessionId as string, taskId, 'TASK_PROGRESS', {
+          operation,
+          phase,
+          completed,
+          total,
+          ...(thumbnail ? { thumbnail } : {}),
+        });
       }
     },
     registerCleanup: cleanup => {
-      if (task) task.cleanup = cleanup;
+      task?.cleanupCallbacks.push(cleanup);
     },
   };
+}
+
+function cleanupTask(task: ActiveTask): Promise<void> {
+  if (task.cleanupPromise) return task.cleanupPromise;
+  task.cleanupPromise = (async () => {
+    let firstError: unknown;
+    for (let index = task.cleanupCallbacks.length - 1; index >= 0; index -= 1) {
+      try {
+        await task.cleanupCallbacks[index]?.();
+      } catch (error) {
+        firstError ??= error;
+      }
+    }
+    if (firstError) throw firstError;
+  })();
+  return task.cleanupPromise;
 }
 
 async function runParse(request: Extract<WorkerRequest, { type: 'PARSE_FILE' }>): Promise<void> {
@@ -104,11 +128,22 @@ async function runParse(request: Extract<WorkerRequest, { type: 'PARSE_FILE' }>)
   try {
     ensureActive(context);
     post(request.sessionId, request.taskId, 'FILE_PARSED', { fileId, pageCount: document.numPages });
-    await renderThumbnails(document, document.numPages, context, (pageIndex, blob) => {
+    const scheduler = createThumbnailScheduler(document, document.numPages, context, (pageIndex, blob) => {
       if (!context.isCancelled()) {
         post(request.sessionId, request.taskId, 'THUMBNAIL_GENERATED', { fileId, pageIndex, blob });
       }
     });
+    const task = activeTasks.get(request.taskId);
+    if (task) {
+      task.setThumbnailPriority = (targetFileId, orderedPageIndexes) => {
+        if (targetFileId === fileId) scheduler.setPriority(orderedPageIndexes);
+      };
+    }
+    // Cleanup is registered after PDF.js loading cleanup and is executed in
+    // reverse order, so active renders settle before the loading task is
+    // destroyed.
+    context.registerCleanup?.(() => scheduler.cancel());
+    await scheduler.done;
     ensureActive(context);
     post(request.sessionId, request.taskId, 'TASK_COMPLETED', { operation: 'parse' });
   } finally {
@@ -139,7 +174,7 @@ async function runRequest(request: WorkerRequest): Promise<void> {
     : request.type === 'EXTRACT_PAGES'
       ? 'extract'
       : 'merge';
-  activeTasks.set(request.taskId, { operation });
+  activeTasks.set(request.taskId, { operation, cleanupCallbacks: [] });
   try {
     await ensurePdfJsWorkerModule();
     if (request.type === 'PARSE_FILE') await runParse(request);
@@ -152,6 +187,8 @@ async function runRequest(request: WorkerRequest): Promise<void> {
       post(request.sessionId, request.taskId, 'TASK_ERROR', toWorkerErrorPayload(error, fallback));
     }
   } finally {
+    const task = activeTasks.get(request.taskId);
+    if (task) await cleanupTask(task).catch(() => undefined);
     activeTasks.delete(request.taskId);
     cancelledTasks.delete(request.taskId);
   }
@@ -165,7 +202,15 @@ function cancelTask(request: Extract<WorkerRequest, { type: 'CANCEL_TASK' }>): v
     post(request.sessionId, targetTaskId, 'TASK_CANCELLED', { reason: 'PDF task was already complete.' });
     return;
   }
-  void Promise.resolve(task.cleanup?.()).catch(() => undefined);
+  void cleanupTask(task).catch(() => undefined);
+}
+
+function setThumbnailPriority(
+  request: Extract<WorkerRequest, { type: 'SET_THUMBNAIL_PRIORITY' }>,
+): void {
+  const task = activeTasks.get(request.payload.targetTaskId);
+  if (!task || task.operation !== 'parse') return;
+  task.setThumbnailPriority?.(request.payload.fileId, request.payload.orderedPageIndexes);
 }
 
 workerScope.onmessage = event => {
@@ -178,7 +223,7 @@ workerScope.onmessage = event => {
       disposed = true;
       for (const [taskId, task] of activeTasks) {
         cancelledTasks.add(taskId);
-        void Promise.resolve(task.cleanup?.()).catch(() => undefined);
+        void cleanupTask(task).catch(() => undefined);
       }
     }
     return;
@@ -189,6 +234,10 @@ workerScope.onmessage = event => {
 
   if (request.type === 'CANCEL_TASK') {
     cancelTask(request);
+    return;
+  }
+  if (request.type === 'SET_THUMBNAIL_PRIORITY') {
+    setThumbnailPriority(request);
     return;
   }
   if (activeTasks.has(request.taskId)) return;
