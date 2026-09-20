@@ -194,6 +194,11 @@ export function PageEditor() {
     }
   }, []);
 
+  const handleDeselectAllPages = useCallback(() => {
+    lastSelectedId.current = null;
+    deselectAllPages();
+  }, [deselectAllPages]);
+
   const handleEditorAddFiles = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFiles = event.target.files;
     if (selectedFiles?.length) addFiles(Array.from(selectedFiles));
@@ -300,7 +305,15 @@ export function PageEditor() {
             <button type="button" onClick={selectAllPages} className="flex items-center gap-2 px-3 py-2 text-xs font-semibold uppercase tracking-wider text-stone-500 hover:bg-stone-100 rounded-xl transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-stone-800 focus-visible:ring-offset-2">
               <CheckSquare size={16} /> All
             </button>
-            <button type="button" onClick={deselectAllPages} disabled={selectedPageIds.length === 0} className="flex items-center gap-2 px-3 py-2 text-xs font-semibold uppercase tracking-wider text-stone-400 hover:text-stone-600 hover:bg-stone-50 rounded-xl transition-colors disabled:opacity-30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-stone-800 focus-visible:ring-offset-2">
+            <button
+              type="button"
+              onPointerDown={handleDeselectAllPages}
+              onClick={(event) => {
+                if (event.detail === 0) handleDeselectAllPages();
+              }}
+              disabled={selectedPageIds.length === 0}
+              className="flex items-center gap-2 px-3 py-2 text-xs font-semibold uppercase tracking-wider text-stone-400 hover:text-stone-600 hover:bg-stone-50 rounded-xl transition-colors disabled:opacity-30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-stone-800 focus-visible:ring-offset-2"
+            >
               <Square size={16} /> None
             </button>
             {selectedPageIds.length > 0 && (
