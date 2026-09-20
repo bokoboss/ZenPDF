@@ -97,6 +97,7 @@ export function PageEditor() {
   const addFiles = usePdfStore(state => state.addFiles);
   const [activeId, setActiveId] = useState<string | null>(null);
   const lastSelectedId = useRef<string | null>(null);
+  const nonePointerIdRef = useRef<number | null>(null);
   const [zoomLevel, setZoomLevel] = useState(3);
   const gridRef = useRef<HTMLDivElement>(null);
   const undoButtonRef = useRef<HTMLButtonElement>(null);
@@ -198,6 +199,28 @@ export function PageEditor() {
     lastSelectedId.current = null;
     deselectAllPages();
   }, [deselectAllPages]);
+
+  const handleNonePointerDown = useCallback((event: React.PointerEvent<HTMLButtonElement>) => {
+    nonePointerIdRef.current = event.isPrimary && event.button === 0 ? event.pointerId : null;
+  }, []);
+
+  const handleNonePointerUp = useCallback((event: React.PointerEvent<HTMLButtonElement>) => {
+    const shouldDeselect = (
+      event.isPrimary &&
+      event.button === 0 &&
+      nonePointerIdRef.current === event.pointerId
+    );
+    nonePointerIdRef.current = null;
+    if (shouldDeselect) handleDeselectAllPages();
+  }, [handleDeselectAllPages]);
+
+  const handleNonePointerCancel = useCallback(() => {
+    nonePointerIdRef.current = null;
+  }, []);
+
+  const handleNonePointerLeave = useCallback((event: React.PointerEvent<HTMLButtonElement>) => {
+    if (event.buttons !== 0) nonePointerIdRef.current = null;
+  }, []);
 
   const handleEditorAddFiles = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFiles = event.target.files;
@@ -307,7 +330,10 @@ export function PageEditor() {
             </button>
             <button
               type="button"
-              onPointerUp={handleDeselectAllPages}
+              onPointerDown={handleNonePointerDown}
+              onPointerUp={handleNonePointerUp}
+              onPointerCancel={handleNonePointerCancel}
+              onPointerLeave={handleNonePointerLeave}
               onClick={(event) => {
                 if (event.detail === 0) handleDeselectAllPages();
               }}
