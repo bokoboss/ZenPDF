@@ -3,7 +3,7 @@ import { create } from 'zustand';
 import { generateId } from './utils';
 import type { PageItem, PdfFile, Toast } from './types';
 import { PdfDomainError } from './src/pdf/errors';
-import type { WorkerResponse } from './src/pdf/protocol';
+import type { ThumbnailProgressPayload, WorkerResponse } from './src/pdf/protocol';
 import { PdfWorkerClient } from './src/pdf/workerClient';
 import {
   EXTRACTED_OUTPUT_OWNER,
@@ -29,6 +29,7 @@ interface PdfStore {
   extractedUrl: string | null;
   isSaving: boolean;
   isExtracting: boolean;
+  thumbnailMetrics: ThumbnailProgressPayload | null;
   history: { past: PageItem[][]; future: PageItem[][] };
   toasts: Toast[];
 
@@ -229,6 +230,9 @@ export const usePdfStore = create<PdfStore>((set, get) => {
       }
 
       case 'TASK_PROGRESS':
+        if (response.payload.thumbnail) {
+          set({ thumbnailMetrics: response.payload.thumbnail });
+        }
         break;
     }
   };
@@ -241,6 +245,7 @@ export const usePdfStore = create<PdfStore>((set, get) => {
       parseTaskIds: {},
       isSaving: false,
       isExtracting: false,
+      thumbnailMetrics: null,
       saveTaskId: null,
       extractTaskId: null,
     });
@@ -262,6 +267,7 @@ export const usePdfStore = create<PdfStore>((set, get) => {
     extractedUrl: null,
     isSaving: false,
     isExtracting: false,
+    thumbnailMetrics: null,
     history: { past: [], future: [] },
     toasts: [],
   };
@@ -290,6 +296,7 @@ export const usePdfStore = create<PdfStore>((set, get) => {
                 extractTaskId: null,
                 isSaving: false,
                 isExtracting: false,
+                thumbnailMetrics: null,
               });
             }
           },
@@ -337,6 +344,7 @@ export const usePdfStore = create<PdfStore>((set, get) => {
         extractedUrl: null,
         isSaving: false,
         isExtracting: false,
+        thumbnailMetrics: null,
         history: { past: [], future: [] },
       });
       get().initWorker();

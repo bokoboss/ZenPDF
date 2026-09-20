@@ -38,7 +38,7 @@ src/pdf/
   resources.ts      Object URL ownership and stale-resource cleanup
   operations/
     parse.ts        PDF.js loading and worker-safe canvas/filter factories
-    thumbnails.ts   sequential PDF page rasterization
+    thumbnails.ts   bounded viewport-priority PDF page rasterization
     merge.ts        pdf-lib merge/extract/rotation output
 ```
 
@@ -80,10 +80,12 @@ interface WorkerRequestEnvelope<TType extends string, TPayload> {
 ```
 
 The request union covers `PARSE_FILE`, `MERGE_FILES`, `MERGE_PAGES`,
-`EXTRACT_PAGES`, `CANCEL_TASK`, and `DISPOSE_SESSION`. Responses cover parsed
-file metadata, generated thumbnail Blobs, progress, output Blobs, completion,
-cancellation, and typed errors. Runtime guards reject malformed envelopes
-before they can mutate application state.
+`EXTRACT_PAGES`, `CANCEL_TASK`, `SET_THUMBNAIL_PRIORITY`, and
+`DISPOSE_SESSION`. `SET_THUMBNAIL_PRIORITY` is a typed control message, not a
+worker task: it carries the current session, an active parse `targetTaskId`, a
+`fileId`, and an ordered list of source page indexes. The worker ignores stale,
+unknown, completed, and non-parse targets. Runtime guards reject malformed
+envelopes and invalid page indexes before they can mutate worker state.
 
 ## Session and task lifecycle
 
@@ -93,6 +95,15 @@ before they can mutate application state.
 - Fatal worker failure rejects active tasks and terminates the worker; the
   client can restart into a new session without refreshing the page.
 - Every parse, merge, and extract operation receives a unique `taskId`.
+- A parse emits `FILE_PARSED` after PDF metadata is available, then owns one
+  bounded thumbnail scheduler until every page completes or the task is
+  cancelled. The scheduler starts with page 0 for the Documents-stage preview,
+  accepts deduplicated viewport priorities, shares a worker-wide two-render
+  limit across parse tasks, and eventually drains all queued pages.
+- Scheduler cancellation settles active renders before `PDFDocumentProxy.cleanup()`
+  runs. Worker task cleanup is an aggregated, reverse-ordered callback list so
+  a scheduler, PDF.js loading task, and any future task resource can all be
+  released without overwriting one another.
 - Responses are accepted only when both client/session and task ownership still
   match the current store state.
 - Cancellation rejects the task promise immediately with `TASK_CANCELLED` and
@@ -131,10 +142,11 @@ ZenPDF does not promise password entry or decryption in this phase.
 
 - Chromium is the currently automated browser qualification target. Firefox
   and WebKit/Safari are not claimed as release-qualified.
-- Thumbnail generation remains sequential and the editor still mounts the full
-  page grid. Scheduling and virtualization belong to Phase 2.
-- Tailwind and Google Fonts still have runtime CDN dependencies; those are UI
-  asset concerns tracked separately from the Phase 1 PDF-processing boundary.
+- Thumbnail scheduling is bounded to two concurrent renders and prioritizes
+  visible/near-visible source pages, but a persistent PDF-document cache is not
+  used. Each parse task retains its document only until its scheduler settles.
+- The editor retains its Phase 2A2 geometry-preserving logical grid and bounded
+  sortable activation; a full virtual-grid DnD migration remains out of scope.
 - WebP, GIF, TIFF, and Office documents remain unsupported.
 
 ## Design boundary

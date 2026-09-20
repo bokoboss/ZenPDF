@@ -83,6 +83,36 @@ export class PdfWorkerClient {
     return this.dispatch('PARSE_FILE', { fileId, file }, 'parse');
   }
 
+  setThumbnailPriority(
+    targetTaskId: string,
+    fileId: string,
+    orderedPageIndexes: readonly number[],
+  ): void {
+    if (this.disposed) return;
+    if (orderedPageIndexes.some(pageIndex => (
+      !Number.isInteger(pageIndex) || pageIndex < 0
+    ))) return;
+    const request: Extract<WorkerRequest, { type: 'SET_THUMBNAIL_PRIORITY' }> = {
+      type: 'SET_THUMBNAIL_PRIORITY',
+      sessionId: this.session,
+      taskId: createId('priority'),
+      payload: {
+        targetTaskId,
+        fileId,
+        orderedPageIndexes: [...new Set(orderedPageIndexes)],
+      },
+    };
+    try {
+      this.workerInstance.postMessage(request);
+    } catch (error) {
+      this.onError?.(new PdfDomainError(
+        'WORKER_RUNTIME_FAILED',
+        error instanceof Error ? error.message : 'Could not update thumbnail priority.',
+        error,
+      ));
+    }
+  }
+
   mergeFiles(files: Extract<WorkerRequest, { type: 'MERGE_FILES' }>['payload']['files']): WorkerTaskHandle {
     return this.dispatch('MERGE_FILES', { files }, 'merge');
   }

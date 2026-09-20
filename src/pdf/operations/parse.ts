@@ -4,10 +4,16 @@ import {
   type PDFDocumentProxy,
 } from 'pdfjs-dist';
 import { PdfDomainError, toPdfDomainError } from '../errors';
+import type { ThumbnailProgressPayload } from '../protocol';
 
 export interface PdfOperationContext {
   isCancelled: () => boolean;
-  onProgress?: (completed: number, total: number, phase: 'parse' | 'thumbnail' | 'write') => void;
+  onProgress?: (
+    completed: number,
+    total: number,
+    phase: 'parse' | 'thumbnail' | 'write',
+    thumbnail?: ThumbnailProgressPayload,
+  ) => void;
   registerCleanup?: (cleanup: () => void | Promise<void>) => void;
 }
 

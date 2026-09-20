@@ -61,6 +61,7 @@ const resetStoreState = () => {
     extractedUrl: null,
     isSaving: false,
     isExtracting: false,
+    thumbnailMetrics: null,
     history: { past: [], future: [] },
     toasts: [],
   });
@@ -524,6 +525,26 @@ describe('PDF store lifecycle hardening', () => {
       payload: { fileId: entry.id, pageIndex: 0, blob: new Blob(['thumb']) },
     });
     dispatch(worker, {
+      type: 'TASK_PROGRESS',
+      sessionId: state.sessionId,
+      taskId,
+      payload: {
+        operation: 'parse',
+        phase: 'thumbnail',
+        completed: 1,
+        total: 1,
+        thumbnail: {
+          pageIndex: 0,
+          inFlight: 1,
+          configuredMaxConcurrency: 2,
+          maxObservedConcurrency: 2,
+          duplicateSuccessfulRenders: 0,
+          reprioritizationCount: 1,
+          renderCancellationCount: 0,
+        },
+      },
+    });
+    dispatch(worker, {
       type: 'TASK_COMPLETED',
       sessionId: state.sessionId,
       taskId,
@@ -534,6 +555,11 @@ describe('PDF store lifecycle hardening', () => {
     expect(result.files[0]?.pageCount).toBe(1);
     expect(result.files[0]?.status).toBe('ready');
     expect(result.files[0]?.thumbnails[0]).toBe('blob:created-1');
+    expect(result.thumbnailMetrics).toMatchObject({
+      pageIndex: 0,
+      configuredMaxConcurrency: 2,
+      maxObservedConcurrency: 2,
+    });
     expect(pdfResourceRegistry.ownedUrlCount()).toBe(1);
   });
 

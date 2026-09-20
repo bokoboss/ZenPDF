@@ -53,6 +53,17 @@ export type CancelTaskRequest = WorkerRequestEnvelope<
   { targetTaskId: string }
 >;
 
+export interface SetThumbnailPriorityPayload {
+  targetTaskId: string;
+  fileId: string;
+  orderedPageIndexes: number[];
+}
+
+export type SetThumbnailPriorityRequest = WorkerRequestEnvelope<
+  'SET_THUMBNAIL_PRIORITY',
+  SetThumbnailPriorityPayload
+>;
+
 export type DisposeSessionRequest = WorkerRequestEnvelope<'DISPOSE_SESSION', Record<string, never>>;
 
 export type WorkerRequest =
@@ -61,6 +72,7 @@ export type WorkerRequest =
   | MergePagesRequest
   | ExtractPagesRequest
   | CancelTaskRequest
+  | SetThumbnailPriorityRequest
   | DisposeSessionRequest;
 
 export interface TaskProgressPayload {
@@ -68,6 +80,17 @@ export interface TaskProgressPayload {
   phase: 'parse' | 'thumbnail' | 'write';
   completed: number;
   total: number;
+  thumbnail?: ThumbnailProgressPayload;
+}
+
+export interface ThumbnailProgressPayload {
+  pageIndex: number;
+  inFlight: number;
+  configuredMaxConcurrency: number;
+  maxObservedConcurrency: number;
+  duplicateSuccessfulRenders: number;
+  reprioritizationCount: number;
+  renderCancellationCount: number;
 }
 
 export type FileParsedResponse = WorkerResponseEnvelope<
@@ -120,8 +143,26 @@ const requestTypes = new Set<WorkerRequest['type']>([
   'MERGE_PAGES',
   'EXTRACT_PAGES',
   'CANCEL_TASK',
+  'SET_THUMBNAIL_PRIORITY',
   'DISPOSE_SESSION',
 ]);
+
+function isThumbnailPriorityPayload(value: unknown): value is SetThumbnailPriorityPayload {
+  if (!value || typeof value !== 'object') return false;
+  const payload = value as Partial<SetThumbnailPriorityPayload>;
+  return (
+    typeof payload.targetTaskId === 'string' &&
+    payload.targetTaskId.length > 0 &&
+    typeof payload.fileId === 'string' &&
+    payload.fileId.length > 0 &&
+    Array.isArray(payload.orderedPageIndexes) &&
+    payload.orderedPageIndexes.every(pageIndex => (
+      typeof pageIndex === 'number' &&
+      Number.isInteger(pageIndex) &&
+      pageIndex >= 0
+    ))
+  );
+}
 
 const responseTypes = new Set<WorkerResponse['type']>([
   'FILE_PARSED',
@@ -141,7 +182,8 @@ export function isWorkerRequest(value: unknown): value is WorkerRequest {
     requestTypes.has(candidate.type as WorkerRequest['type']) &&
     typeof candidate.sessionId === 'string' &&
     typeof candidate.taskId === 'string' &&
-    'payload' in candidate
+    'payload' in candidate &&
+    (candidate.type !== 'SET_THUMBNAIL_PRIORITY' || isThumbnailPriorityPayload(candidate.payload))
   );
 }
 

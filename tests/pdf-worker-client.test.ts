@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { PdfDomainError, toPdfDomainError } from '../src/pdf/errors';
 import { PdfWorkerClient } from '../src/pdf/workerClient';
-import type { WorkerResponse } from '../src/pdf/protocol';
+import { isWorkerRequest, type WorkerResponse } from '../src/pdf/protocol';
 
 class FakeWorker {
   onmessage: ((event: MessageEvent) => void) | null = null;
@@ -48,6 +48,35 @@ describe('PdfWorkerClient typed lifecycle', () => {
 
     await expect(handle.promise).resolves.toBeUndefined();
     expect(responses).toHaveLength(1);
+    client.dispose();
+  });
+
+  it('dispatches typed thumbnail priority controls without creating a worker task handle', () => {
+    const client = new PdfWorkerClient({ workerFactory });
+    const worker = createdWorkers[0];
+    const parseTask = client.parseFile('file-a', new File(['pdf'], 'file-a.pdf', { type: 'application/pdf' }));
+
+    client.setThumbnailPriority(parseTask.taskId, 'file-a', [4, 4, 1]);
+
+    const request = worker.postMessage.mock.calls[1]?.[0] as Record<string, unknown>;
+    expect(request.type).toBe('SET_THUMBNAIL_PRIORITY');
+    expect(request.sessionId).toBe(client.sessionId);
+    expect(request.taskId).not.toBe(parseTask.taskId);
+    expect(request.payload).toEqual({
+      targetTaskId: parseTask.taskId,
+      fileId: 'file-a',
+      orderedPageIndexes: [4, 1],
+    });
+    expect(client.activeTaskIds).toEqual([parseTask.taskId]);
+    expect(isWorkerRequest(request)).toBe(true);
+    expect(isWorkerRequest({
+      ...request,
+      payload: { ...request.payload as object, orderedPageIndexes: [1, -1] },
+    })).toBe(false);
+
+    client.setThumbnailPriority(parseTask.taskId, 'file-a', [1, Number.NaN]);
+    expect(worker.postMessage).toHaveBeenCalledTimes(2);
+
     client.dispose();
   });
 

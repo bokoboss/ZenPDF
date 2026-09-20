@@ -40,7 +40,9 @@ The benchmark generates a deterministic in-memory PDF containing blank A4-like p
 
 Blank pages are intentional. They isolate page/thumbnail pipeline overhead from complex PDF content/rendering cost.
 
-Separate future fixtures should cover image-heavy and vector/text-heavy PDFs.
+Phase 2B adds deterministic vector/text-heavy and raster/scanned-like fixtures
+for scheduler qualification; the blank fixture remains the continuity and
+main-thread baseline.
 
 ## Measured milestones
 
@@ -63,7 +65,8 @@ This captures the cost of entering the editor while keeping the full logical pag
 Elapsed time from file selection until the store reports all expected canonical page thumbnails ready.
 The metric is independent of how many thumbnail subtrees are currently mounted in the window.
 
-Current ZenPDF renders thumbnails sequentially, so this metric is especially useful for evaluating Phase 2 scheduling and prioritization.
+Phase 2B records this alongside the time-to-useful-editor milestones so a
+shorter final completion time is not mistaken for better viewport behavior.
 
 ### Phase 2A editor milestones
 
@@ -92,6 +95,38 @@ The performance and browser artifacts record `logicalPageCount`,
 and overscan row ranges, grid column count, and zoom level. The mounted counts
 describe expensive DOM work; they are intentionally distinct from the logical page
 count and must not grow linearly to 500 pages.
+
+### Phase 2B scheduling metrics
+
+The Phase 2B harness runs against generated real-content PDFs in
+`tests/fixtures/realContentFixtures.ts` through
+`tests/perf/real-content.perf.ts`. It records:
+
+- `initialPriorityFirstThumbnailMs` and `initialPriorityWindowCompleteMs`;
+- `farJumpAtMs`, `farPriorityFirstThumbnailMs`, and
+  `farPriorityWindowCompleteMs`;
+- background thumbnails completed before the initial priority window;
+- stale/background responses observed after a far jump and before its first
+  far-priority response;
+- configured and maximum observed render concurrency;
+- duplicate successful renders, reprioritization count, and render-cancellation
+  count.
+
+The worker-wide scheduler limiter is configured at
+`MAX_CONCURRENT_THUMBNAILS = 2`, including when multiple parse tasks are
+active. The vector fixture contains 120 deterministic text/line/rectangle-heavy pages. The
+raster fixture contains 100 deterministic pages with unique generated PNG
+content tiled across each page. Both are local, reproducible, dependency-free,
+and contain no network or copyrighted input.
+
+The acceptance flow imports the fixture, enters the editor before all
+thumbnails complete, waits for the initial overscan range, jumps to the last
+page, verifies far-range readiness and interaction before final completion,
+waits for every thumbnail, saves the output, reparses it, and asserts no
+console errors. The heavy-fixture gates are: initial priority completes before
+the background drain, far priority is materially ahead of final completion,
+maximum observed concurrency does not exceed the configured limit, duplicate
+successful renders remain zero, and far interaction remains below 500 ms.
 
 ### `sourceBytes`
 
@@ -137,8 +172,6 @@ After the basic baseline is stable, add targeted fixtures for:
 
 ### Content complexity
 
-- text/vector-heavy PDF
-- scanned/image-heavy PDF
 - mixed portrait/landscape PDF
 - source pages with rotation
 
@@ -202,7 +235,7 @@ The 500-page result exposes a clear scaling problem in the current editor path:
 - entering a 500-page editor takes about `20.7 s`,
 - all thumbnails are ready at almost the same point (`20.73 s`).
 
-`FileManager` does not intentionally disable the Page Editor while thumbnails finish, so the long `editorReadyMs` is not simply a thumbnail-completion gate. The current Page Editor mounts the complete page grid and one sortable item/hook set per page. The first evidence therefore supports **full-grid construction / DnD component cost as a major Phase 2 hypothesis**, while sequential thumbnail work remains a parallel optimization target.
+`FileManager` does not intentionally disable the Page Editor while thumbnails finish, so the long `editorReadyMs` is not simply a thumbnail-completion gate. The current Page Editor mounts the complete page grid and one sortable item/hook set per page. The first evidence therefore supports **full-grid construction / DnD component cost as a major Phase 2 hypothesis**, while thumbnail scheduling remained a separate optimization target.
 
 Phase 2 should test this hypothesis directly by comparing:
 
@@ -242,7 +275,7 @@ The exact hosted Linux qualification was CI run `33072439871` at commit `8b16cd6
 
 The 500-page target was **not met**: `editorReadyMs` was 8,698 ms versus the 3,500 ms ceiling. This is an improvement of 1,162 ms (11.8%) over the Phase 1C hosted editor-ready reference, while parse remained comparable and the 100-page all-thumbnail result improved. The shell snapshot still contained all 500 thumbnails and the first card became usable only after the full-grid cost, so thumbnail response remapping was not the sole remaining gate.
 
-The remaining bottleneck is full-DOM sortable construction and layout/measurement work: one outer sortable card and hook set is still created for every page, including off-screen pages. `content-visibility: auto` is limited to inner page content so sortable geometry remains correct; it therefore does not bound that outer cost. Phase 2B should explicitly evaluate bounded rendering/virtualization or an off-screen sortable strategy, together with thumbnail scheduling/priority, while preserving keyboard/touch behavior and stable geometry. No Phase 2B architecture is included in this qualification.
+The remaining bottleneck is full-DOM sortable construction and layout/measurement work: one outer sortable card and hook set is still created for every page, including off-screen pages. `content-visibility: auto` is limited to inner page content so sortable geometry remains correct; it therefore does not bound that outer cost. Phase 2B keeps the bounded sortable architecture and adds worker thumbnail scheduling/priority; a full virtual-grid DnD migration remains out of scope.
 
 The corresponding 100-page browser qualification covers first/far selection, zoom levels 1–5, multi-select and group movement, mouse/keyboard/touch drag, reorder undo, rotation, removal undo/redo, and reparsed output order/dimensions/rotation. Lifecycle tests separately verify that thumbnail-only responses do not mutate `pageOrder` and that existing stale/reset/remove/fatal-worker protections remain intact.
 

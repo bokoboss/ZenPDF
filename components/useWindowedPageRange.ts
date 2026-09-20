@@ -96,6 +96,7 @@ export function useWindowedPageRange(
   gridRef: RefObject<HTMLDivElement | null>,
   pageCount: number,
   zoomLevel: number,
+  onRangeMeasured?: (range: PageWindowRange) => void,
 ): PageWindowRange {
   const [range, setRange] = useState(() => initialRange(pageCount));
 
@@ -105,6 +106,7 @@ export function useWindowedPageRange(
     const updateRange = () => {
       const measured = measureRange(gridRef.current, pageCount);
       if (!measured) return;
+      onRangeMeasured?.(measured);
       setRange(previous => sameRange(previous, measured) ? previous : measured);
     };
 
@@ -130,7 +132,7 @@ export function useWindowedPageRange(
       observer?.disconnect();
       if (frame !== 0) window.cancelAnimationFrame(frame);
     };
-  }, [gridRef, pageCount, zoomLevel]);
+  }, [gridRef, onRangeMeasured, pageCount, zoomLevel]);
 
   return range;
 }

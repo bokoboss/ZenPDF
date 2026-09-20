@@ -2,12 +2,119 @@ import type { PDFDocumentProxy } from 'pdfjs-dist';
 import { PdfDomainError, toPdfDomainError } from '../errors';
 import type { PdfOperationContext } from './parse';
 
+export const MAX_CONCURRENT_THUMBNAILS = 2;
+
+export interface ThumbnailSchedulerMetrics {
+  configuredMaxConcurrency: number;
+  maxObservedConcurrency: number;
+  activeCount: number;
+  completedPageIndexes: number[];
+  duplicateSuccessfulRenders: number;
+  reprioritizationCount: number;
+  renderCancellationCount: number;
+  backgroundCompletedBeforeInitialPriorityCompletion: number;
+}
+
+export type ThumbnailPageRenderer = (
+  pageIndex: number,
+  context: PdfOperationContext,
+) => Promise<Blob>;
+
+export interface ThumbnailSchedulerOptions {
+  maxConcurrency?: number;
+  renderPage?: ThumbnailPageRenderer;
+  renderLimiter?: ThumbnailRenderLimiter;
+}
+
+export interface ThumbnailRenderLimiter {
+  tryAcquire(): (() => void) | null;
+  onAvailable(listener: () => void): () => void;
+  getMaxObservedConcurrency(): number;
+}
+
+export interface ThumbnailScheduler {
+  readonly done: Promise<void>;
+  setPriority(orderedPageIndexes: readonly number[]): void;
+  cancel(): Promise<void>;
+  getMetrics(): ThumbnailSchedulerMetrics;
+}
+
+function cancelledError(): PdfDomainError {
+  return new PdfDomainError('TASK_CANCELLED', 'PDF task was cancelled.');
+}
+
+export function isRenderingCancelledException(error: unknown): boolean {
+  return Boolean(
+    error &&
+    typeof error === 'object' &&
+    'name' in error &&
+    (error as { name?: unknown }).name === 'RenderingCancelledException',
+  );
+}
+
+function normalizePriority(pageIndexes: readonly number[], pageCount: number): number[] {
+  const seen = new Set<number>();
+  const result: number[] = [];
+  for (const pageIndex of pageIndexes) {
+    if (
+      !Number.isInteger(pageIndex) ||
+      pageIndex < 0 ||
+      pageIndex >= pageCount ||
+      seen.has(pageIndex)
+    ) continue;
+    seen.add(pageIndex);
+    result.push(pageIndex);
+  }
+  return result;
+}
+
+export function createThumbnailRenderLimiter(
+  maxConcurrency = MAX_CONCURRENT_THUMBNAILS,
+): ThumbnailRenderLimiter {
+  const capacity = Math.max(1, Math.floor(maxConcurrency));
+  let activeCount = 0;
+  let maxObservedConcurrency = 0;
+  let notificationIndex = 0;
+  const listeners = new Set<() => void>();
+
+  const notifyAvailable = () => {
+    const snapshot = [...listeners];
+    if (snapshot.length === 0) return;
+    const start = notificationIndex % snapshot.length;
+    for (let offset = 0; offset < snapshot.length && activeCount < capacity; offset += 1) {
+      snapshot[(start + offset) % snapshot.length]?.();
+    }
+    notificationIndex = (start + 1) % snapshot.length;
+  };
+
+  return {
+    tryAcquire: () => {
+      if (activeCount >= capacity) return null;
+      activeCount += 1;
+      maxObservedConcurrency = Math.max(maxObservedConcurrency, activeCount);
+      let released = false;
+      return () => {
+        if (released) return;
+        released = true;
+        activeCount -= 1;
+        notifyAvailable();
+      };
+    },
+    onAvailable: listener => {
+      listeners.add(listener);
+      notificationIndex = Math.max(0, listeners.size - 1);
+      return () => listeners.delete(listener);
+    },
+    getMaxObservedConcurrency: () => maxObservedConcurrency,
+  };
+}
+
 export async function renderThumbnail(
   document: PDFDocumentProxy,
   pageNumber: number,
   context: PdfOperationContext,
 ): Promise<Blob> {
-  if (context.isCancelled()) throw new PdfDomainError('TASK_CANCELLED', 'PDF task was cancelled.');
+  if (context.isCancelled()) throw cancelledError();
 
   let canvas: OffscreenCanvas | null = null;
   try {
@@ -23,9 +130,13 @@ export async function renderThumbnail(
       viewport,
     }).promise;
 
-    if (context.isCancelled()) throw new PdfDomainError('TASK_CANCELLED', 'PDF task was cancelled.');
+    if (context.isCancelled()) throw cancelledError();
     return await canvas.convertToBlob({ type: 'image/jpeg', quality: 0.7 });
   } catch (error) {
+    // PDF.js uses this exception when a RenderTask is cancelled. Keep it
+    // distinguishable so the scheduler can retry the page instead of
+    // converting scheduler control flow into a document failure.
+    if (isRenderingCancelledException(error)) throw error;
     throw toPdfDomainError(error, 'PDF_RENDER_FAILED');
   } finally {
     if (canvas) {
@@ -35,16 +146,275 @@ export async function renderThumbnail(
   }
 }
 
+export function createThumbnailScheduler(
+  document: PDFDocumentProxy,
+  pageCount: number,
+  context: PdfOperationContext,
+  onThumbnail: (pageIndex: number, blob: Blob) => void,
+  options: ThumbnailSchedulerOptions = {},
+): ThumbnailScheduler {
+  const configuredMaxConcurrency = Math.max(
+    1,
+    Math.floor(options.maxConcurrency ?? MAX_CONCURRENT_THUMBNAILS),
+  );
+  const renderPage = options.renderPage ?? (
+    (pageIndex, renderContext) => renderThumbnail(document, pageIndex + 1, renderContext)
+  );
+  const renderLimiter = options.renderLimiter ?? createThumbnailRenderLimiter(configuredMaxConcurrency);
+  const queued = new Set<number>();
+  for (let pageIndex = 0; pageIndex < pageCount; pageIndex += 1) queued.add(pageIndex);
+
+  const priorityQueue: number[] = pageCount > 0 ? [0] : [];
+  let backgroundQueue = Array.from(queued).filter(pageIndex => pageIndex !== 0);
+  let currentPriority = pageCount > 0 ? [0] : [];
+  let prioritySignature = currentPriority.join(',');
+  const completed = new Set<number>();
+  const inFlight = new Set<number>();
+  const cancellationAttempts = new Map<number, number>();
+
+  let activeCount = 0;
+  let cancelRequested = false;
+  let failure: PdfDomainError | null = null;
+  let settled = false;
+  let resolveDone!: () => void;
+  let rejectDone!: (error: PdfDomainError) => void;
+  const done = new Promise<void>((resolve, reject) => {
+    resolveDone = resolve;
+    rejectDone = reject;
+  });
+  let cancellationCompletion: Promise<void> | null = null;
+  let resolveCancellation: (() => void) | null = null;
+  let unsubscribeLimiter: () => void = () => undefined;
+
+  const metrics: ThumbnailSchedulerMetrics = {
+    configuredMaxConcurrency,
+    maxObservedConcurrency: 0,
+    activeCount: 0,
+    completedPageIndexes: [],
+    duplicateSuccessfulRenders: 0,
+    reprioritizationCount: 0,
+    renderCancellationCount: 0,
+    backgroundCompletedBeforeInitialPriorityCompletion: 0,
+  };
+
+  const initialPriority = new Set(currentPriority);
+  let initialPriorityComplete = initialPriority.size === 0;
+
+  const settleIfReady = () => {
+    if (activeCount !== 0) return;
+
+    if (!settled) {
+      if (failure) {
+        settled = true;
+        rejectDone(failure);
+      } else if (cancelRequested || context.isCancelled()) {
+        settled = true;
+        rejectDone(cancelledError());
+      } else if (completed.size === pageCount) {
+        settled = true;
+        resolveDone();
+      }
+    }
+
+    if (settled) unsubscribeLimiter();
+
+    if (cancelRequested && resolveCancellation) {
+      const resolve = resolveCancellation;
+      resolveCancellation = null;
+      resolve();
+    }
+  };
+
+  const requestCancel = () => {
+    if (settled || cancelRequested) return;
+    cancelRequested = true;
+    queued.clear();
+    priorityQueue.length = 0;
+    backgroundQueue = [];
+    settleIfReady();
+  };
+
+  const fail = (error: unknown) => {
+    if (failure || cancelRequested) return;
+    failure = error instanceof PdfDomainError
+      ? error
+      : toPdfDomainError(error, 'PDF_RENDER_FAILED');
+    queued.clear();
+    priorityQueue.length = 0;
+    backgroundQueue = [];
+  };
+
+  const takeNextPage = (): number | undefined => {
+    while (priorityQueue.length > 0) {
+      const pageIndex = priorityQueue.shift();
+      if (pageIndex !== undefined && queued.has(pageIndex)) return pageIndex;
+    }
+    while (backgroundQueue.length > 0) {
+      const pageIndex = backgroundQueue.shift();
+      if (pageIndex !== undefined && queued.has(pageIndex)) return pageIndex;
+    }
+    return undefined;
+  };
+
+  const returnPageToQueue = (pageIndex: number) => {
+    if (currentPriority.includes(pageIndex)) priorityQueue.unshift(pageIndex);
+    else backgroundQueue.unshift(pageIndex);
+  };
+
+  const requeuePage = (pageIndex: number) => {
+    queued.add(pageIndex);
+    if (currentPriority.includes(pageIndex)) priorityQueue.push(pageIndex);
+    else backgroundQueue.push(pageIndex);
+  };
+
+  const runPage = async (pageIndex: number): Promise<void> => {
+    try {
+      const blob = await renderPage(pageIndex, context);
+      if (cancelRequested || failure || context.isCancelled()) return;
+      if (completed.has(pageIndex)) {
+        metrics.duplicateSuccessfulRenders += 1;
+        return;
+      }
+
+      completed.add(pageIndex);
+      metrics.completedPageIndexes.push(pageIndex);
+      onThumbnail(pageIndex, blob);
+      context.onProgress?.(completed.size, pageCount, 'thumbnail', {
+        pageIndex,
+        inFlight: activeCount,
+        configuredMaxConcurrency: metrics.configuredMaxConcurrency,
+        maxObservedConcurrency: Math.max(
+          metrics.maxObservedConcurrency,
+          renderLimiter.getMaxObservedConcurrency(),
+        ),
+        duplicateSuccessfulRenders: metrics.duplicateSuccessfulRenders,
+        reprioritizationCount: metrics.reprioritizationCount,
+        renderCancellationCount: metrics.renderCancellationCount,
+      });
+
+      if (!initialPriorityComplete && initialPriority.has(pageIndex)) {
+        initialPriorityComplete = [...initialPriority].every(index => completed.has(index));
+      } else if (!initialPriorityComplete && !initialPriority.has(pageIndex)) {
+        metrics.backgroundCompletedBeforeInitialPriorityCompletion += 1;
+      }
+    } catch (error) {
+      if (isRenderingCancelledException(error)) {
+        metrics.renderCancellationCount += 1;
+        const attempts = (cancellationAttempts.get(pageIndex) ?? 0) + 1;
+        cancellationAttempts.set(pageIndex, attempts);
+        if (cancelRequested || context.isCancelled()) {
+          requestCancel();
+        } else if (attempts === 1) {
+          requeuePage(pageIndex);
+        } else {
+          fail(new PdfDomainError(
+            'PDF_RENDER_FAILED',
+            `Thumbnail rendering was cancelled repeatedly for page ${pageIndex}.`,
+            error,
+          ));
+        }
+      } else if (cancelRequested || context.isCancelled() || (
+        error instanceof PdfDomainError && error.code === 'TASK_CANCELLED'
+      )) {
+        requestCancel();
+      } else {
+        fail(error);
+      }
+    }
+  };
+
+  const pump = () => {
+    if (failure || cancelRequested || settled) {
+      settleIfReady();
+      return;
+    }
+    if (context.isCancelled()) {
+      requestCancel();
+      return;
+    }
+
+    while (activeCount < configuredMaxConcurrency) {
+      const pageIndex = takeNextPage();
+      if (pageIndex === undefined) break;
+      const releaseRender = renderLimiter.tryAcquire();
+      if (!releaseRender) {
+        returnPageToQueue(pageIndex);
+        break;
+      }
+      queued.delete(pageIndex);
+      inFlight.add(pageIndex);
+      activeCount += 1;
+      metrics.activeCount = activeCount;
+      metrics.maxObservedConcurrency = Math.max(
+        metrics.maxObservedConcurrency,
+        renderLimiter.getMaxObservedConcurrency(),
+      );
+
+      const renderPromise = runPage(pageIndex);
+      void renderPromise.finally(() => {
+        releaseRender();
+        inFlight.delete(pageIndex);
+        activeCount -= 1;
+        metrics.activeCount = activeCount;
+        if (failure || cancelRequested || context.isCancelled()) settleIfReady();
+        else if (completed.size === pageCount && activeCount === 0) settleIfReady();
+        else pump();
+      });
+    }
+
+    if (activeCount === 0) settleIfReady();
+  };
+
+  const scheduler: ThumbnailScheduler = {
+    done,
+    setPriority: orderedPageIndexes => {
+      if (settled || cancelRequested || failure) return;
+      const nextPriority = normalizePriority(orderedPageIndexes, pageCount);
+      const nextSignature = nextPriority.join(',');
+      if (nextSignature === prioritySignature) return;
+
+      prioritySignature = nextSignature;
+      currentPriority = nextPriority;
+      metrics.reprioritizationCount += 1;
+      priorityQueue.length = 0;
+      for (const pageIndex of currentPriority) {
+        if (queued.has(pageIndex)) priorityQueue.push(pageIndex);
+      }
+      const nextPrioritySet = new Set(currentPriority);
+      backgroundQueue = [...queued]
+        .filter(pageIndex => !nextPrioritySet.has(pageIndex))
+        .sort((left, right) => left - right);
+      pump();
+    },
+    cancel: () => {
+      if (settled || cancelRequested) return cancellationCompletion ?? Promise.resolve();
+      cancellationCompletion = new Promise<void>(resolve => {
+        resolveCancellation = resolve;
+      });
+      requestCancel();
+      return cancellationCompletion;
+    },
+    getMetrics: () => ({
+      ...metrics,
+      maxObservedConcurrency: Math.max(
+        metrics.maxObservedConcurrency,
+        renderLimiter.getMaxObservedConcurrency(),
+      ),
+      completedPageIndexes: [...metrics.completedPageIndexes],
+    }),
+  };
+
+  unsubscribeLimiter = renderLimiter.onAvailable(pump);
+  pump();
+  return scheduler;
+}
+
 export async function renderThumbnails(
   document: PDFDocumentProxy,
   pageCount: number,
   context: PdfOperationContext,
   onThumbnail: (pageIndex: number, blob: Blob) => void,
 ): Promise<void> {
-  for (let pageIndex = 0; pageIndex < pageCount; pageIndex += 1) {
-    if (context.isCancelled()) throw new PdfDomainError('TASK_CANCELLED', 'PDF task was cancelled.');
-    const blob = await renderThumbnail(document, pageIndex + 1, context);
-    onThumbnail(pageIndex, blob);
-    context.onProgress?.(pageIndex + 1, pageCount, 'thumbnail');
-  }
+  const scheduler = createThumbnailScheduler(document, pageCount, context, onThumbnail);
+  await scheduler.done;
 }
