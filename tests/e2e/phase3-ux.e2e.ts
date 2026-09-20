@@ -250,6 +250,37 @@ test('failed files are visible, non-loading, and block merge/editor until remove
   await expect(page.getByRole('button', { name: 'Page Editor' })).toBeEnabled();
 });
 
+test('editor Save ignores an unrelated failed added file', async ({ page }) => {
+  const good = await makePdf('editor-good', [
+    { width: 200, height: 300 },
+    { width: 220, height: 320 },
+  ]);
+  const malformed = Buffer.from('%PDF-1.7\nthis is intentionally malformed\n%%EOF');
+
+  await enterEditor(page, [{ name: 'editor-good.pdf', mimeType: 'application/pdf', buffer: good }]);
+  await expect(page.locator('[data-page-card]')).toHaveCount(2);
+
+  await page.locator('#add-file-editor').setInputFiles({
+    name: 'malformed.pdf',
+    mimeType: 'application/pdf',
+    buffer: malformed,
+  });
+
+  await expect(page.getByRole('alert')).toContainText(/malformed|couldn't|read|error/i, { timeout: 30_000 });
+  await expect(page.locator('[data-page-card]')).toHaveCount(2);
+  await expect(page.getByRole('button', { name: 'Save PDF' })).toBeEnabled();
+
+  await page.getByRole('button', { name: 'Save PDF' }).click();
+  const downloadLink = page.getByRole('link', { name: 'Download' });
+  await expect(downloadLink).toBeVisible({ timeout: 30_000 });
+  const downloadPromise = page.waitForEvent('download');
+  await downloadLink.click();
+  const output = await downloadedPdf(await downloadPromise);
+  expect(output.getPageCount()).toBe(2);
+  expect(output.getPage(0).getWidth()).toBeCloseTo(200, 1);
+  expect(output.getPage(1).getWidth()).toBeCloseTo(220, 1);
+});
+
 for (const viewport of [
   { width: 390, height: 844 },
   { width: 360, height: 800 },

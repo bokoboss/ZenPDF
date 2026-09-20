@@ -196,18 +196,35 @@ export const SortablePageGridItem = memo(function SortablePageGridItem({ page, o
       </div>
 
       {/* Page Number Badge */}
-      <div className="absolute bottom-3 right-3 pointer-events-none flex flex-col items-end gap-1 max-w-[calc(100%-1.5rem)]">
-        <span className="text-[10px] font-bold text-stone-500 bg-stone-100/80 px-2 py-1 rounded-md backdrop-blur-sm border border-stone-200/50">
-          {outputPosition}
-        </span>
-        <PageProvenance
-          fileName={fileName}
-          pageIndex={page.pageIndex}
-          outputPosition={outputPosition}
-          showProvenance={showProvenance}
-          descriptionId={descriptionId}
-        />
-      </div>
+      {showProvenance ? (
+        <div className="absolute bottom-3 right-3 pointer-events-none flex flex-col items-end gap-1 max-w-[calc(100%-1.5rem)]">
+          <span className="text-[10px] font-bold text-stone-500 bg-stone-100/80 px-2 py-1 rounded-md backdrop-blur-sm border border-stone-200/50">
+            {outputPosition}
+          </span>
+          <PageProvenance
+            fileName={fileName}
+            pageIndex={page.pageIndex}
+            outputPosition={outputPosition}
+            showProvenance={showProvenance}
+            descriptionId={descriptionId}
+          />
+        </div>
+      ) : (
+        <>
+          <div className="absolute bottom-3 right-3 pointer-events-none">
+            <span className="text-[10px] font-bold text-stone-500 bg-stone-100/80 px-2 py-1 rounded-md backdrop-blur-sm border border-stone-200/50">
+              {outputPosition}
+            </span>
+          </div>
+          <PageProvenance
+            fileName={fileName}
+            pageIndex={page.pageIndex}
+            outputPosition={outputPosition}
+            showProvenance={false}
+            descriptionId={descriptionId}
+          />
+        </>
+      )}
     </div>
   );
 });
