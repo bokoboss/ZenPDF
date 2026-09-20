@@ -307,7 +307,7 @@ export function PageEditor() {
             </button>
             <button
               type="button"
-              onPointerDown={handleDeselectAllPages}
+              onPointerUp={handleDeselectAllPages}
               onClick={(event) => {
                 if (event.detail === 0) handleDeselectAllPages();
               }}
