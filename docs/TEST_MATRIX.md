@@ -115,8 +115,9 @@ UI success is not sufficient. Current Chromium tests download and parse generate
 
 Future cases:
 
-- [ ] browser drag/reorder output order
-- [ ] delete/undo/redo output correctness
+- [x] browser drag/reorder output order
+- [x] delete/reorder output correctness with page-position renumbering
+- [x] save/reparse after provenance reorder and deletion
 - [ ] image-heavy/rendered visual comparison where PDF structure assertions are insufficient
 
 ## UI regression checks
@@ -132,23 +133,34 @@ Current CI captures a visual-baseline artifact for:
 
 Future baseline expansion:
 
-- [ ] page editor with multi-selection
+- [x] Phase 3 desktop page editor with multi-source/reordered provenance
 - [ ] save/download-ready state
-- [ ] recoverable error state
-- [ ] populated mobile editor/document states
+- [x] recoverable document error state
+- [x] populated mobile editor selected-page/selected-count state
 
 Any intentional visual change should be compared against these baselines and preserve the established ZenPDF visual language.
 
 ## Accessibility and interaction checks
 
-- [ ] All essential actions are keyboard reachable end-to-end.
+- [x] All essential actions are keyboard reachable end-to-end.
 - [x] Per-page select/rotate/remove controls have visible keyboard-focus treatment and accessible names.
-- [ ] Icon-only editor toolbar controls have complete accessible names.
+- [x] Icon-only editor toolbar controls have complete accessible names, including narrow-screen actions.
 - [x] Drag/reorder has a verified keyboard path.
-- [ ] Touch interaction can select, rotate, delete, and reorder pages end-to-end.
+- [x] Touch interaction can select, rotate, delete, and undo pages on 390x844 and 360x800; existing touch DnD qualification remains green.
 - [ ] Prolonged edge-triggered mouse-drag auto-scroll; Playwright qualification remains nondeterministic, so this Phase 2B branch records the limitation instead of weakening scheduler evidence.
-- [ ] Narrow sticky-toolbar layout remains usable without overflow/occlusion.
-- [ ] Disabled/busy actions expose meaningful state.
+- [x] Narrow sticky-toolbar layout remains usable without horizontal overflow/occlusion at 390x844 and 360x800.
+- [x] Disabled/busy actions expose meaningful state, including failed-file blocking and polite/alert toast semantics.
+
+## Phase 3 browser qualification
+
+- [x] Landing upload surface opens the file chooser from Tab/Enter/Space and clears its value after selection.
+- [x] Header brand control is keyboard-operable and preserves its return-to-upload behavior.
+- [x] Mounted page cards expose output position, source page context, provenance when needed, and a named reorder handle.
+- [x] Output positions renumber after merge/reorder/delete and the saved PDF is reparsed to verify the displayed order and dimensions.
+- [x] Per-page deletion restores focus to the next/previous mounted page control or the toolbar fallback.
+- [x] Start Over exposes a labelled modal dialog with Cancel initial focus, Tab/Shift+Tab trapping, Escape cancellation, inert background content, and trigger focus restoration.
+- [x] Failed-file card state is visible and non-loading; the failed filename, Remove action, Quick Merge blocking, Page Editor blocking, and alert toast are covered.
+- [x] Dedicated screenshots are captured for desktop provenance, mobile selected-count toolbar, and deterministic documents error state under `test-results/visual-baseline/`.
 
 See `docs/UX_AUDIT_NO_REDESIGN.md`.
 

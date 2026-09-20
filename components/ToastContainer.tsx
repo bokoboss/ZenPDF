@@ -10,6 +10,9 @@ export function ToastContainer() {
       {toasts.map(toast => (
         <div 
           key={toast.id} 
+          role={toast.type === 'error' ? 'alert' : 'status'}
+          aria-live={toast.type === 'error' ? 'assertive' : 'polite'}
+          aria-atomic="true"
           className={cn(
             "pointer-events-auto flex items-center gap-3 px-5 py-3.5 rounded-2xl shadow-xl shadow-stone-200/50 border backdrop-blur-xl animate-in slide-in-from-right-10 fade-in duration-300 min-w-[300px]",
             toast.type === 'success' ? "bg-white/95 border-stone-200 text-stone-800" : 

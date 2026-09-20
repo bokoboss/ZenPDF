@@ -18,7 +18,7 @@ Priority definitions:
 Keep the existing:
 
 - warm stone/off-white palette,
-- Outfit-led typographic character,
+- current system sans typographic character,
 - generous whitespace,
 - rounded cards and pill controls,
 - restrained shadows and borders,
@@ -27,6 +27,32 @@ Keep the existing:
 - low-density premium presentation,
 - upload-page composition,
 - overall 3-step visual identity unless a future UX decision explicitly proves a better flow while preserving the same character.
+
+## Phase 3 status
+
+Phase 3 closes the release-blocking UX and accessibility findings without changing
+the accepted visual language.
+
+### RESOLVED
+
+- Output badges now show the current output position, while source page indices remain available as provenance.
+- Multi-source or reordered output cards show subtle filename/page provenance only on mounted cards, with full accessible descriptions for long names.
+- Landing upload and the ZenPDF brand control are native keyboard-operable controls; same-file reselection clears the input value.
+- Editor toolbar controls have explicit accessible names, including labels hidden below `sm`, and focus-visible treatment remains clear.
+- Selected-page toolbar reachability and a compact polite selection count are qualified at 390x844 and 360x800 without horizontal overflow.
+- Failed files show a stable inline error state without a loading spinner; removal remains available and failed inputs disable Quick Merge and Page Editor.
+- Toasts expose polite status semantics for normal messages and alert semantics for errors without moving focus.
+- Start Over is a focus-trapped modal dialog with least-destructive initial focus, Escape cancellation, inert background content, and trigger focus restoration.
+- Per-page deletion restores focus to the next or previous mounted page control, with an editor-toolbar fallback when no page remains.
+- Workflow progress is exposed as a labelled navigation with `aria-current="step"`.
+
+### DEFERRED POST-v1
+
+- Filename customization or editor/download naming controls.
+- Shortcut help or a persistent keyboard legend.
+- Complex touch range selection beyond tap-to-select and existing multi-selection paths.
+- Direct retry for malformed files; remove and add again remains the supported recovery path.
+- Other non-blocking polish that would add UI density without improving a release-critical interaction.
 
 ## Findings
 
@@ -43,7 +69,7 @@ File B: 1 2 3
 
 This does not communicate output position after pages are reordered.
 
-Recommended future treatment:
+Implemented treatment:
 
 - primary badge = output position,
 - optional subtle provenance = source file + source page when needed.
@@ -172,10 +198,9 @@ Avoid persistent shortcut labels that make the interface busier.
 
 ### Phase 3
 
-- clarify output position vs source-page provenance,
-- selected-count refinement,
-- download naming refinement,
-- optional shortcut discoverability.
+The release-critical Phase 3 findings above are resolved. Download naming and
+shortcut discoverability remain deferred post-v1; they are convenience polish,
+not correctness or accessibility blockers.
 
 ## Acceptance principle
 
