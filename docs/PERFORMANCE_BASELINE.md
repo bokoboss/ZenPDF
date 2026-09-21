@@ -317,3 +317,46 @@ The hosted 500-page result meets the Phase 2A2 ceilings of 2,500 ms for
 browser artifact also recorded the same 56, 36, 30, 20, and 15 mounted-sortable
 counts at zoom levels 1 through 5, with 30 sortables in the far range and stable
 scroll geometry.
+
+
+## v1.0 release-candidate reference
+
+The final runtime-code change before release closure was PR #20, exact head
+`0b7fdf3a913dd2ae1fa1ceb20a61694cbf6f0055`, CI run #87. The release-closure
+PR changes version metadata/documentation only, so these values are the
+pre-release runtime reference. Exact release-PR CI remains the final authority.
+
+### Blank fixtures — hosted Chromium 151
+
+| Pages | Parse | Editor shell | Editor ready | All thumbnails | First interaction | Far interaction | Expensive sortables at shell |
+|---:|---:|---:|---:|---:|---:|---:|---:|
+| 100 | 256 ms | 424 ms | 496 ms | 424 ms | 53 ms | 42 ms | 25 |
+| 500 | 278 ms | 637 ms | 733 ms | 637 ms | 77 ms | 42 ms | 25 |
+
+The v1 blank-500 gates remain:
+- editor shell <= 2,000 ms
+- editor ready <= 2,500 ms
+- expensive mounted sortable/card work remains bounded
+
+### Real-content scheduling — hosted Chromium 151
+
+| Fixture | Pages | Parse | Editor shell | All thumbnails | Far-priority first thumbnail | Far priority window | Max concurrency | Duplicate successful renders |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| vector/text-heavy | 120 | 312 ms | 595 ms | 2,123 ms | 502 ms | 519 ms | 2 | 0 |
+| raster/scanned-like | 100 | 2,006 ms | 2,382 ms | 2,775 ms | 147 ms | 162 ms | 2 | 0 |
+
+Raster parse cost is intentionally reported separately: viewport scheduling
+cannot prioritize thumbnails until PDF parsing has produced the document/page
+model.
+
+### Interpretation
+
+Compared with the Phase 0 hosted 500-page editor-ready reference of 20,697 ms,
+the v1 release-candidate reference is 733 ms while preserving the full logical
+500-page sequence. This is a runner-specific comparison, not a universal
+latency guarantee.
+
+The final architecture keeps expensive mounted sortable/card work bounded,
+uses visible/near-visible thumbnail priority, limits worker-wide PDF thumbnail
+renders to two, and records zero duplicate successful renders in the accepted
+real-content qualification.

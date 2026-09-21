@@ -1,99 +1,88 @@
 # ZenPDF Support Matrix
 
-This document records the behavior that is supported by the current implementation and distinguishes it from planned capabilities. It is intentionally conservative: a format or workflow is not called supported unless the current code path handles it explicitly or automated browser verification covers it.
+This matrix is intentionally conservative. A capability is called supported only when the current implementation handles it explicitly and the v1 release evidence supports the claim.
 
 ## Input formats
 
-| Input | Current status | Notes |
+| Input | v1.0 status | Notes |
 |---|---|---|
-| PDF | Supported | Parsed with PDF.js; merged/output with pdf-lib. |
-| JPEG / JPG | Supported | Imported as a one-page image document and can be merged into PDF output. |
-| PNG | Supported | Imported as a one-page image document and can be merged into PDF output; mixed PNG/PDF output is browser-regression tested. |
-| WebP | Not supported | Not accepted by the current file inputs/worker image path. |
-| GIF | Not supported | Not accepted by the current file inputs/worker image path. |
-| TIFF | Not supported | Not accepted by the current file inputs/worker image path. |
-| Office documents | Not supported | DOCX/XLSX/PPTX conversion is outside the current product scope. |
+| PDF | Supported | Parsed with PDF.js; output generated with pdf-lib. |
+| JPEG / JPG | Supported | Imported as a one-page image document. Dedicated mixed-JPEG browser fixture remains desirable. |
+| PNG | Supported | Imported as a one-page image document; mixed PDF/PNG output is browser-tested. |
+| WebP / GIF / TIFF | Not supported | Not accepted by the current input/worker image path. |
+| Office documents | Not supported | DOCX/XLSX/PPTX conversion is outside v1 scope. |
 
-## PDF workflows
+## Core workflows
 
-| Capability | Current status | Verification |
+| Capability | v1.0 status | Qualification |
 |---|---|---|
-| Merge multiple PDF files | Supported | Chromium E2E verifies output page count/order and source page dimensions. |
-| Merge PDF + PNG | Supported | Chromium E2E verifies mixed PNG/PDF output page count and dimensions. |
-| Merge PDF + JPEG | Supported by implementation | Same worker path as PNG with JPEG embedding; dedicated mixed JPEG browser fixture remains desirable. |
-| Reorder files before quick merge | Supported | Store/DnD path exists; dedicated browser drag regression is still desirable. |
-| Open page editor | Supported | Browser E2E exercises the editor. |
-| Reorder pages | Supported | Store behavior implemented; dedicated output-order browser drag test remains desirable. |
-| Multi-select pages | Supported | Current editor behavior. |
-| Shift-select a page range | Supported on desktop pointer/keyboard workflow | Touch equivalent should be reviewed separately. |
-| Move selected pages as a group | Supported | Store/DnD path exists. |
-| Rotate individual pages | Supported | Chromium E2E verifies generated PDF rotation. |
-| Preserve source rotation + add editor rotation | Supported | Chromium E2E verifies 90° source rotation + 90° editor rotation produces 180°. |
-| Rotate selected pages | Supported | Implemented in page editor. |
-| Delete pages | Supported | Implemented with undo/redo history. |
-| Extract selected pages | Supported | Chromium E2E verifies only selected pages are emitted. |
-| Undo/redo page edits | Supported | Store regression coverage exists. |
-| Add files while in editor | Supported | New pages are appended when parsing completes. |
-| Download generated PDF | Supported | Browser E2E downloads and reparses generated files. |
-| Thai/non-ASCII source filename | Supported for import/generation | Chromium E2E imports `เอกสารทดสอบ-01.pdf` and generates a valid output. |
+| Quick Merge multiple PDFs | Supported | Chromium output page order/count/dimensions. |
+| Mixed PDF + PNG | Supported | Chromium output regression. |
+| Page Editor | Supported | Full Chromium E2E suite. |
+| Mouse page reorder | Supported | Output/reparse regression. |
+| Keyboard DnD | Supported | Browser-qualified. |
+| Touch DnD | Supported | Browser-qualified. |
+| Multi-selected group move | Supported | Browser-qualified with undo/redo. |
+| Shift-range selection | Supported on desktop | Touch uses individual selection / existing multi-selection paths. |
+| Rotate individual/selected pages | Supported | Rotation behavior and toolbar interaction qualified. |
+| Preserve source + editor rotation | Supported | Additive rotation regression. |
+| Delete / undo / redo | Supported | Browser and store regressions. |
+| Extract selected pages | Supported | Download/reparse regression. |
+| Add files in Editor | Supported | Browser-qualified, including failed-added-file save isolation. |
+| Output position + source provenance | Supported | Multi-source reorder/delete/save regression. |
+| Download generated PDF | Supported | Browser download and PDF reparse. |
+| Thai/non-ASCII filename | Supported | Chromium import/output workflow. |
+| Malformed PDF recovery | Supported by remove/re-add | Stable failed-file card and typed error; no direct Retry control. |
 
 ## Document characteristics
 
-| Characteristic | Current status | Notes |
+| Characteristic | v1.0 status | Notes |
 |---|---|---|
-| Portrait pages | Supported | Normal PDF path. |
-| Landscape pages | Supported | Current PDF path preserves source dimensions. |
-| Mixed page sizes | Supported | Automated browser fixture verifies distinct dimensions across merged files. |
-| Source page rotation | Supported | Dedicated browser regression verifies source rotation is preserved and editor rotation is additive. |
-| Added 90° page rotation | Supported | Browser E2E verified. |
-| 100-page blank synthetic PDF | Performance-qualified baseline | Phase 0 CI: parse 368 ms; editor ready 811 ms; all thumbnails 2,229 ms on the recorded hosted-runner environment. |
-| 500-page blank synthetic PDF | Functionally qualified, performance concern identified | Phase 0 CI: parse 876 ms; editor ready 20,697 ms; all thumbnails 20,731 ms. Full-grid/editor construction is a major Phase 2 hypothesis. |
-| 1,000-page PDFs | Not routinely qualified | Targeted stress case; not part of every PR. |
-| Very large file sizes | Browser/memory dependent; no explicit guarantee | No application-level file size ceiling is currently enforced. |
+| Portrait / landscape pages | Supported | Source dimensions preserved. |
+| Mixed page sizes | Supported | Browser fixture verifies distinct dimensions. |
+| Source rotation | Supported | Preserved and composed with editor rotation. |
+| 100-page blank PDF | Release-qualified | Routine CI performance fixture. |
+| 500-page blank PDF | Release-qualified | Windowed expensive work; routine CI gate. |
+| 120-page text/vector-heavy PDF | Release-qualified | Viewport-priority scheduling fixture. |
+| 100-page raster/scanned-like PDF | Release-qualified | Real rendering-cost scheduling fixture. |
+| 1,000-page PDF | Targeted/manual only | Not a routine v1 release gate. |
+| Very large files | Browser/memory dependent | No application-level size guarantee. |
 
-Performance values are reference measurements from one GitHub-hosted runner class, not universal guarantees. See `docs/PERFORMANCE_BASELINE.md`.
+Reference release-candidate evidence from PR #20 CI #87:
+- blank 500: 278 ms parse, 637 ms editor shell, 733 ms editor ready, 25 expensive sortables
+- vector 120: 502 ms far-priority first thumbnail
+- raster 100: 147 ms far-priority first thumbnail
+- worker-wide thumbnail concurrency 2/2, duplicate successful renders 0
 
-## Passwords, encryption, and malformed PDFs
+These measurements are runner-specific reference values, not universal guarantees.
 
-| Case | Current status | Notes |
-|---|---|---|
-| Password-protected/encrypted PDF | Recoverable rejection; not supported as a user workflow | The typed worker classifies password/encryption errors. No password prompt/decryption workflow exists. |
-| Add password protection | Not supported | Candidate Phase 4 feature. |
-| Remove password with known password | Not supported | No password workflow exists. |
-| Corrupt/malformed PDF | Recoverable at application level | Chromium E2E verifies an invalid PDF produces a typed error while Documents/Add File remain usable. |
+## Passwords and encryption
 
-## Privacy / connectivity
+| Case | v1.0 status |
+|---|---|
+| Password-protected/encrypted PDF | Recoverable rejection; no password-entry workflow |
+| Add/remove password protection | Not supported |
+| Corrupt/malformed PDF | Recoverable failed-file state |
 
-| Property | Current status | Notes |
-|---|---|---|
-| Document processing on application server | Not used | Core document processing occurs in the browser. |
-| Document upload required | No | The application does not require an app-server upload for current PDF operations. |
-| Self-contained tested application shell | Supported for the tested production preview | PDF.js, pdf-lib, Tailwind CSS, and the system font stack are local/build-time dependencies; browser request audit finds no third-party UI asset requests. A universal full-offline guarantee is not claimed. |
-| API key required | No | Obsolete Gemini/API-key scaffold has been removed. |
+## Privacy/connectivity
 
-## Browsers
+- Document contents remain in the browser for current workflows.
+- Application-server document upload is not required.
+- PDF.js, pdf-lib, CSS, icons, and typography are local/bundled for the tested production build.
+- No API key is required.
+- Runtime-network audit is part of release qualification.
 
-Current automated browser qualification is Chromium-based. Other modern browsers may work, but Firefox/Safari are not yet part of the release matrix. This matters particularly for `OffscreenCanvas`, Web Worker behavior, Blob/Object URL lifecycle, drag-and-drop, and large-document performance.
+## Browser qualification
 
-## Current automated qualification
+Chromium is the v1.0 release-qualified browser baseline.
 
-The Phase 1 branch currently validates:
+Firefox and WebKit/Safari are not fully qualified for v1.0. Browser-specific behavior around workers, canvas, Blob/Object URLs, DnD, and large-document performance is therefore not guaranteed outside Chromium.
 
-- deterministic `npm ci`
-- strict TypeScript
-- Zustand/store lifecycle regression tests
-- production Vite build
-- Chromium launch of the production preview
-- real PDF quick merge output
-- output page dimensions/order
-- mixed PNG/PDF output
-- Thai/non-ASCII filename workflow
-- source + editor rotation composition
-- real selected-page extraction output
-- malformed-PDF recoverability
-- typed worker session/task isolation, cancellation, restart, and resource cleanup
-- actionable browser console errors during supported flows
-- desktop/mobile visual baseline screenshots captured as a CI artifact
-- repeatable 100-page and 500-page performance baseline artifacts
+## Known interaction limitations
 
-See `docs/TEST_MATRIX.md` for the broader target matrix and `docs/ROADMAP.md` for planned hardening.
+- Prolonged edge-triggered mouse-drag auto-scroll remains nondeterministic in automated qualification.
+- There is no complex touch range-selection mode.
+- There is no persistent workspace/session restore.
+- There is no custom output filename editor or shortcut-help UI.
+
+See `docs/TEST_MATRIX.md`, `docs/PERFORMANCE_BASELINE.md`, and `docs/releases/v1.0.0.md`.

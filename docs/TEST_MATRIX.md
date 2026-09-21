@@ -157,6 +157,7 @@ Any intentional visual change should be compared against these baselines and pre
 - [x] Header brand control is keyboard-operable and preserves its return-to-upload behavior.
 - [x] Mounted page cards expose output position, source page context, provenance when needed, and a named reorder handle.
 - [x] Output positions renumber after merge/reorder/delete and the saved PDF is reparsed to verify the displayed order and dimensions.
+- [x] After mouse DnD, the `None` action deterministically clears selected page IDs before the next selection/delete action; the Alpha/Beta output regression remains `400, 200, 420`.
 - [x] Per-page deletion restores focus to the next/previous mounted page control or the toolbar fallback.
 - [x] Start Over exposes a labelled modal dialog with Cancel initial focus, Tab/Shift+Tab trapping, Escape cancellation, inert background content, and trigger focus restoration.
 - [x] Failed-file card state is visible and non-loading; the failed filename, Remove action, Quick Merge blocking, Page Editor blocking, and alert toast are covered.
@@ -207,3 +208,20 @@ Phase 2 acceptance direction:
 - improvements must be demonstrated against the same benchmark rather than asserted qualitatively.
 
 See `docs/PERFORMANCE_BASELINE.md` for methodology and interpretation limits.
+
+
+## v1.0 release-closure status
+
+The release closure preserves pending cases above as pending; they are not silently promoted to supported release claims.
+
+Authoritative release gates are:
+- Node 20/22 typecheck, unit tests, and production build
+- complete Chromium PDF/output/E2E/visual suite
+- runtime-network audit
+- narrow mobile 390×844 and 360×800
+- blank 100/500 benchmarks
+- vector/raster scheduling qualification
+- exact-head CI
+- production deployment smoke
+
+The release candidate must not reduce test counts or regenerate protected visual goldens to hide drift.

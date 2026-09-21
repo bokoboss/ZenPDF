@@ -148,10 +148,18 @@ ZenPDF does not promise password entry or decryption in this phase.
 - The editor retains its Phase 2A2 geometry-preserving logical grid and bounded
   sortable activation; a full virtual-grid DnD migration remains out of scope.
 - WebP, GIF, TIFF, and Office documents remain unsupported.
+- Large raster PDFs can spend substantial time in PDF parsing before viewport
+  thumbnail priority can take effect.
+- Prolonged edge-triggered mouse-drag auto-scroll is not claimed as
+  deterministic in browser automation.
+- There is no persistent workspace restore or direct malformed-file Retry flow.
 
 ## Design boundary
 
-Phase 1 is infrastructure work and is intentionally visually neutral. The
-existing warm stone palette, typography, spacing, rounded surfaces, shadows,
-motion, upload-page treatment, and quiet information hierarchy are preserved.
+The v1 modernization is intentionally visually conservative. The existing
+warm stone palette, system sans typography, spacing, rounded surfaces, shadows,
+motion, upload-page treatment, and quiet information hierarchy are protected.
+Infrastructure/performance work must remain visually neutral unless a bounded
+UX requirement explicitly justifies a visible change.
+
 See `docs/DESIGN_GUARDRAILS.md` and `AGENTS.md`.

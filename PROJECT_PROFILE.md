@@ -1,112 +1,102 @@
 # Project Profile
 
 ## Identity
-- Project name: ZenPDF
-- Repository URL: `https://github.com/bokoboss/ZenPDF`
-- Authoritative local path: `C:\MyRD\ZenPDF`
-- Primary branch: `main`
-- Package/application version: `0.0.0` (`package.json`)
 
-## Current accepted baseline
-- Accepted branch: `main`
-- Accepted HEAD SHA: `7774887092750c1f195ab0ae4e11bed2790e2f31`
-- Accepted date: task-provided Phase 3 baseline
-- Current phase/milestone: Issue #3 / Phase 1A, Issue #4 / Phase 1B, Issue #6 / Phase 1C, Issue #5 / Phase 2A, Issue #12 / Phase 2A2, and Issue #14 / Phase 2B are accepted on `main`; Issue #16 / Phase 3 UX and accessibility finishing is in progress on this feature branch
-- Umbrella tracking: Issue #5 remains open
-- Last accepted PR / CI run: not re-queried for this Phase 3 baseline
+- Project name: ZenPDF
+- Repository: `https://github.com/bokoboss/ZenPDF`
+- Authoritative local path: `C:\\MyRD\\ZenPDF`
+- Primary branch: `main`
+- Release target: `v1.0.0`
+- Package/application version: `1.0.0`
+
+## Release candidate baseline
+
+- Accepted implementation main before release metadata: `1c482407a274a3c14f9afec2d7039c23c96290d2`
+- Release-closure branch: `release/v1.0.0-closure`
+- Release-closure tracking: Issue #18
+- Umbrella modernization tracking: Issue #5
+- Final release SHA: the commit tagged `v1.0.0` after release-closure acceptance
+
+## Completed modernization
+
+- Phase 0 — foundation, deterministic build/test/visual/performance baseline
+- Phase 1A — typed local PDF module worker
+- Phase 1B — lifecycle, cancellation, stale-response, and Object URL hardening
+- Phase 1C — local UI runtime dependencies and protected visual baseline
+- Phase 2A — editor render isolation
+- Phase 2A2 — bounded expensive sortable/card activation for large documents
+- Phase 2B — viewport-priority thumbnail scheduling with worker-wide concurrency limit
+- Phase 3 — UX, accessibility, mobile/touch qualification, output position/provenance
+- v1 blocker #19 — deterministic post-drag selection-clear correctness regression
 
 ## Technology stack
-- Languages: TypeScript
-- Frameworks/runtime: React 19, Vite, Zustand
-- Validation tools: TypeScript strict mode, Vitest, Playwright Chromium
-- Package manager: npm with committed `package-lock.json`; deterministic install path is `npm ci`
-- Supported CI runtimes: Node.js 20 and 22 (`.github/workflows/ci.yml`)
+
+- TypeScript
+- React 19
+- Vite
+- Zustand
+- `pdfjs-dist@6.2.108`
+- `pdf-lib@1.17.1`
+- dnd-kit
+- Tailwind CSS 3 build-time pipeline
+- Vitest
+- Playwright Chromium
+- npm with committed `package-lock.json`
+
+CI validates Node.js 20 and 22.
 
 ## Standard commands
-### Install/bootstrap
+
 ```text
 npm ci
-```
-### Fast validation
-```text
 npm run typecheck
 npm run test
-```
-### Full validation
-```text
-npm run typecheck
-npm run test
+npm run build
 npm run test:e2e
 npm run benchmark:pdf
-```
-### Build/package
-```text
-npm run build
-```
-### Local run
-```text
-npm run dev
-```
-### Combined check
-```text
 npm run check
 ```
 
-## Architecture / invariants
-- ZenPDF is a browser-only React/Vite application; document processing remains local in the browser.
-- PDF parsing/thumbnails and output generation run in a Vite-bundled TypeScript module worker through `PdfWorkerClient`.
-- `pdfjs-dist@6.2.108` and `pdf-lib@1.17.1` are pinned local application dependencies; document contents remain browser-local.
-- Worker lifecycle, Object URL cleanup, page ordering, page dimensions, rotation, mixed PDF/PNG behavior, malformed-PDF recovery, and responsive large-document behavior are protected by the Phase 0 validation contract.
-- Architecture direction is documented in `docs/ARCHITECTURE.md` and the Phase 1 packet; no server-side document upload/storage is part of the current privacy model.
+## Architecture invariants
 
-## Protected behavior
-Changes must not alter the following unless explicitly approved:
-- Existing ZenPDF premium visual design and visual language.
-- Warm palette, typography hierarchy, whitespace, rounded geometry, shadows, motion, upload-page composition, and information hierarchy.
-- Local document processing and the current privacy boundary.
-- PDF correctness: page count/order, source dimensions, rotation, mixed PDF/image output, and recoverable malformed-PDF behavior.
-- Required regression validation and Phase 0 guardrails.
-- Local UI runtime CSS/font dependency removal must preserve the accepted visual baseline.
-- Issue #12 / Phase 2A2 bounded sortable activation remains the editor baseline; the full logical grid and current DnD semantics remain in place while Issue #14 adds bounded worker thumbnail scheduling and viewport priority.
+- Document processing remains local in the browser.
+- PDF parsing, thumbnail rendering, merge/extract, and output generation run through the typed module-worker boundary.
+- Worker requests/responses are session/task scoped; stale work cannot repopulate newer state.
+- Browser Object URLs have explicit ownership and cleanup.
+- `pageOrder` is the authoritative output-page sequence.
+- Source page identity and output position remain distinct.
+- The logical grid remains complete while expensive sortable/card work is windowed.
+- Thumbnail scheduling is viewport-aware and worker-wide concurrency is capped at two.
+- The protected ZenPDF visual language is not redesigned by infrastructure work.
 
-## Important paths
-- Source: `App.tsx`, `components/`, `store.ts`, `types.ts`, `utils.ts`, `src/pdf/`
-- Tests: `tests/store.test.ts`, `tests/e2e/`, `tests/perf/`
-- Documentation: `docs/ARCHITECTURE.md`, `docs/DESIGN_GUARDRAILS.md`, `docs/TEST_MATRIX.md`, `docs/SUPPORT_MATRIX.md`, `docs/PERFORMANCE_BASELINE.md`, `SECURITY.md`
-- CI: `.github/workflows/ci.yml`
-- Generated output: `dist/`, `test-results/` (local/CI-generated)
-- Local-only / sensitive / licensed data: document contents are intended to remain in the browser; no committed sensitive data was identified
+## v1.0 release qualification
 
-## Validation matrix
-| Gate | Command / Method | Required |
-|---|---|---|
-| Unit / targeted | `npm run test` (Vitest store/lifecycle regression coverage) | Yes |
-| Integration / regression | `npm run test:e2e` (Playwright Chromium real-PDF output and visual baseline coverage) | Yes when browser qualification is required |
-| Browser/UI | Playwright Chromium visual baseline test | Yes for visual-sensitive changes |
-| Build/package/runtime | `npm ci`, `npm run typecheck`, `npm run build` | Yes |
-| Performance | `ZENPDF_PERF_PAGES=100 npm run benchmark:pdf` and `ZENPDF_PERF_PAGES=500 npm run benchmark:pdf` | Required by CI qualification |
-| CI | `.github/workflows/ci.yml` | Yes |
+Required release gates:
 
-## Execution characteristics
-- Typical task ambiguity: Bounded modernization work should follow the repository’s implementation packet and test matrix.
-- High-risk areas: PDF correctness, worker/session lifecycle, Object URL cleanup, privacy boundary, large-document performance, and visual drift.
-- Modules safe to parallelize: Not established; preserve the project ownership boundaries in the execution contract.
-- Modules tightly coupled / single-owner: PDF worker/store lifecycle and browser regression flows.
-- Preferred local execution constraints: Keep document processing local, preserve the existing visual language, and run the required regression gates before claiming completion.
+- deterministic `npm ci`
+- TypeScript typecheck
+- unit/lifecycle tests
+- production build
+- Chromium PDF/output/E2E tests
+- protected visual baseline
+- narrow mobile 390×844 and 360×800 qualification
+- runtime-network audit
+- blank 100/500 performance
+- vector/raster real-content scheduling qualification
+- exact-head GitHub CI
+- production deployment smoke
 
-## Git / release policy
-- Branch naming: Feature/workflow branches are used; exact naming policy is not otherwise documented in the repository.
-- Commit policy: Preserve reviewable, scoped commits; exact policy is not otherwise documented.
-- PR policy: Changes are reviewed through GitHub pull requests; do not merge workflow adoption automatically.
-- Merge policy: `main` is the accepted baseline; exact merge settings are GitHub-side and not verified locally.
-- Release policy: Not established in the repository.
+## Current known limitations
 
-## Current known limitations / risks
-- The Phase 1 PDF worker is Chromium-qualified; Firefox/WebKit qualification remains pending.
-- The PDF.js worker module uses a local dynamic import/bootstrap suppression shim because `pdfjs-dist@6.2.108` auto-initializes against the host worker global.
-- Tailwind CSS is build-time local and the tested production shell has no third-party UI/font runtime requests; full offline capability beyond the tested boundary is not claimed.
-- Phase 2A2 bounds mounted sortable work for large documents without redesigning the UI. Phase 2B adds a typed priority control and a bounded two-render scheduler without a persistent PDF-document cache; hosted CI remains the acceptance authority for both editor and thumbnail metrics.
-- Some Phase 1 test cases remain intentionally pending in `docs/TEST_MATRIX.md`.
+- Chromium is the qualified browser baseline; Firefox/WebKit are not fully qualified.
+- Prolonged edge-triggered mouse-drag auto-scroll remains nondeterministic in browser automation.
+- Raster-heavy PDF parse time can dominate before thumbnail scheduling starts.
+- Reprioritization bounds normal stale in-flight thumbnail work rather than cancelling every render.
+- No direct malformed-PDF retry; remove/re-add is the supported recovery path.
+- No persistent workspace/session restore.
+- No custom filename editor, shortcut-help UI, or complex touch range-selection mode.
+- 1,000-page stress is targeted/manual rather than a routine release gate.
 
-## Current next objective
-- Complete Issue #16 UX/accessibility and page-provenance qualification without changing the accepted visual design, while keeping worker redesign, persistent document caching, a full virtual-grid DnD migration, and unrelated UI work separately scoped.
+## Next objective
+
+Complete Issue #18 release closure, verify the merged production deployment, tag the accepted release SHA as `v1.0.0`, publish release notes where tooling permits, and then close Issue #5.

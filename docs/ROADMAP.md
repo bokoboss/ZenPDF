@@ -1,150 +1,96 @@
 # ZenPDF Modernization Roadmap
 
-This roadmap modernizes ZenPDF while preserving the established visual design.
+ZenPDF v1.0 modernization is implementation-complete. The remaining release work is validation, versioning, production sign-off, and tagging.
 
-## Phase 0 — Foundation and safety
+## Completed for v1.0
 
-Goal: make the current application easier to trust, build, review, and change without redesigning it.
+### Phase 0 — Foundation and safety
 
-- [x] Remove obsolete AI Studio / Gemini configuration
-- [x] Replace scaffold README with project-specific documentation
-- [x] Record visual design guardrails
-- [x] Add deterministic dependency lockfile
-- [x] Add TypeScript typecheck command
-- [x] Add build/typecheck/test CI on Node 20 and 22
-- [x] Add store lifecycle regression test harness
-- [x] Add fixture-generated real PDF output regression harness
-- [x] Document the current supported/unsupported PDF matrix
-- [x] Record visual baselines for representative desktop and mobile states
-- [x] Record 100-page and 500-page performance baselines
-- [x] Audit UX/accessibility without redesigning the product
-- [x] Prepare a bounded Phase 1 architecture/execution packet
-- [x] Prepare a ready-to-use Codex Phase 1 prompt
+- [x] Remove obsolete Gemini/API-key scaffold
+- [x] Deterministic lockfile and CI
+- [x] Typecheck, unit, browser, visual, and performance harnesses
+- [x] Design guardrails and support/test documentation
+- [x] 100-page and 500-page performance baselines
 
-Phase 0 is considered **foundation-complete** once its final PR qualification is green. Password/encrypted-document classification remains intentionally assigned to the Phase 1 typed-error migration rather than adding throwaway infrastructure to the old worker.
+### Phase 1 — PDF engine hardening
 
-Exit criteria:
+- [x] Typed Vite module worker
+- [x] Local pinned PDF.js and pdf-lib dependencies
+- [x] Session/task-scoped worker protocol
+- [x] Stale-response rejection
+- [x] Cancellation, restart, and reset lifecycle
+- [x] Centralized Object URL ownership/cleanup
+- [x] Stable typed PDF error taxonomy
+- [x] Recoverable malformed/protected-document handling
 
-- A clean checkout can be installed and built reproducibly.
-- CI blocks changes that fail typecheck/test/build.
-- Real generated PDFs are downloaded and reparsed in browser regression tests.
-- The visual baseline is explicitly protected and captured in CI.
-- Large-document behavior has a repeatable before-change benchmark.
-- The next implementation phase is bounded by an explicit architecture and acceptance contract.
+### Phase 2 — Large-document performance
 
-## Phase 1 — PDF engine hardening
+- [x] Isolate thumbnail updates from editor-wide page-order churn
+- [x] Narrow Zustand subscriptions and hot-path membership lookups
+- [x] Preserve full logical grid while windowing expensive sortable/card work
+- [x] Qualify mouse, touch, keyboard, group, and far-range DnD with windowing
+- [x] Viewport/overscan thumbnail priority
+- [x] Worker-wide bounded thumbnail queue (maximum two renders)
+- [x] Session/task cancellation and cleanup while thumbnail work is active
+- [x] Blank 100/500 benchmark qualification
+- [x] Text/vector-heavy and raster/scanned-like scheduling qualification
 
-Goal: keep document processing local while making worker behavior reliable and maintainable.
+The 1,000-page case remains a targeted/manual stress case rather than a routine v1 release gate. Rich long-operation progress UI is also deferred because current release gates are met without adding interface density.
 
-Authoritative execution contract: `docs/PHASE_1_IMPLEMENTATION_PACKET.md`.
+### Phase 3 — UX/accessibility/information finishing
 
-- [x] Replace stringified Blob worker with a typed module worker
-- [x] Bundle `pdf-lib` and PDF.js as local dependencies
-- [x] Remove runtime PDF-library CDN dependencies
-- [x] Define typed worker request/response protocol
-- [x] Add `taskId` and `sessionId`
-- [x] Ignore stale worker responses after reset/session changes
-- [x] Add cancellation/worker restart behavior
-- [x] Centralize Object URL creation and revocation
-- [x] Add explicit file and task error states
-- [x] Handle encrypted, malformed, and unsupported documents gracefully
+- [x] Keyboard-operable upload and navigation controls
+- [x] Explicit accessible names and visible focus treatment
+- [x] Touch/narrow-editor qualification at 390×844 and 360×800
+- [x] Selected-count status
+- [x] Output-position numbering and conditional source provenance
+- [x] Recoverable per-file error state
+- [x] Toast status/alert semantics
+- [x] Start Over modal focus trapping/Escape/focus restoration
+- [x] Per-page delete focus persistence
+- [x] Same-file re-selection
+- [x] Deterministic post-drag selection-clear correctness regression
 
-Phase 1 retains the Phase 0 reset, stale-file, and Object URL protections while
-moving PDF work to the local typed module worker. Password entry/decryption is
-still intentionally out of scope; protected files are classified and rejected
-recoverably.
+## v1.0 release closure
 
-Exit criteria:
+- [x] Implementation phases accepted
+- [x] Release-blocking DnD/selection correctness defect fixed
+- [ ] Release metadata/docs PR exact-head CI
+- [ ] Production deployment smoke
+- [ ] Tag accepted release SHA as `v1.0.0`
+- [ ] Publish GitHub Release if available
+- [ ] Close Issue #18 and umbrella Issue #5
 
-- Reset while processing cannot repopulate stale state.
-- Worker failures are recoverable without refreshing the page.
-- No PDF processing library is loaded from a runtime CDN.
-- Blob/Object URL lifecycle is covered by tests.
-- Current PDF output regression behavior remains green.
-- Phase 0 performance baseline shows no unexplained material regression.
-- Visual baseline shows no unintended redesign.
+## Deferred post-v1 / future
 
-## Phase 2 — Performance and large-document behavior
+Potential work must remain separately scoped and must preserve ZenPDF's focused product identity.
 
-Goal: keep the current premium interaction quality when documents become large.
+- 1,000-page routine qualification
+- richer long-operation progress/cancellation UI
+- persistent workspace/session restoration
+- custom output filename editing
+- shortcut discoverability/help
+- complex touch range selection
+- direct malformed-file Retry action
+- Firefox/WebKit release qualification
+- duplicate/blank-page/range utilities
+- crop/normalize page sizes
+- metadata/watermark/password features
+- improved image-to-PDF controls
 
-Phase 0 evidence: a blank 500-page synthetic PDF reaches page-count recognition quickly but the current full editor grid requires roughly 20.7 seconds to instantiate on the recorded CI runner. See `docs/PERFORMANCE_BASELINE.md`.
+## Explicit non-goals
 
-- [ ] Lazy/priority thumbnail generation
-- [ ] Bounded thumbnail render queue
-- [ ] Cancel off-session thumbnail work
-- [ ] Page-grid virtualization or equivalent bounded rendering strategy
-- [ ] Reduce sortable/DnD work for off-screen pages
-- [ ] Avoid repeated O(n) lookups in hot page operations
-- [x] Define repeatable 100-page and 500-page performance fixtures
-- [ ] Qualify the 1,000-page stress case
-- [ ] Add progress reporting for long operations
+Unless requirements change, do not turn ZenPDF into:
 
-Exit criteria:
-
-- A large document does not freeze the primary UI thread.
-- Useful visible pages become interactive substantially earlier than the Phase 0 baseline.
-- Thumbnail work prioritizes visible/near-visible pages.
-- Long operations provide useful progress and cancellation behavior.
-- Performance improvements are demonstrated against the same benchmark.
-
-## Phase 3 — UX hardening without visual redesign
-
-Goal: improve usability while preserving the existing ZenPDF visual language.
-
-Audit reference: `docs/UX_AUDIT_NO_REDESIGN.md`.
-
-- [x] Qualify/improve touch interactions where hover is currently relevant
-- [x] Complete keyboard and focus behavior review
-- [x] Clarify output-page position versus original source page number
-- [x] Add document/page provenance where useful
-- [x] Add per-file error states using Phase 1 typed errors
-- [x] Review destructive-action confidence/undo behavior
-- [x] Review mobile toolbar density and reachability
-- [x] Improve same-file re-selection in the Editor-stage file input
-- [x] Complete accessible names for icon-only editor controls
-- [ ] Evaluate whether the 3-step flow should ever evolve into a persistent workspace
-
-Phase 3 completes the bounded keyboard/touch/focus review without changing established styling. Direct malformed-file retry, filename customization, shortcut discoverability, and persistent-workspace exploration remain post-v1 or future UX decisions.
-
-Important: a unified workspace may be explored, but only if it can retain the established premium, calm design. This is a UX decision, not a mandate to redesign the app.
-
-## Phase 4 — Focused professional tools
-
-Add capabilities that strengthen the core organizing workflow rather than turning ZenPDF into an all-purpose Acrobat replacement.
-
-Candidate features:
-
-- [ ] Duplicate page
-- [ ] Insert blank page
-- [ ] Split by page/range
-- [ ] Extract page ranges
-- [ ] Reverse page order
-- [ ] Move selection to beginning/end
-- [ ] Page numbering
-- [ ] Crop pages
-- [ ] Normalize page sizes
-- [ ] PDF metadata
-- [ ] Watermark
-- [ ] Password protection
-- [ ] Better image-to-PDF controls
-
-## Explicit non-goals for the near term
-
-Unless requirements change, do not prioritize:
-
-- Full PDF text editing
-- Full annotation suite
-- Digital-signature platform
-- Server-side document storage
-- Account system
-- AI features that require uploading document contents
-- A large catalogue of loosely related PDF micro-tools
+- a full PDF text editor
+- a full annotation/signature suite
+- a server-side document store
+- an account platform
+- an OCR/cloud-processing product
+- a catalogue of unrelated PDF micro-tools
 
 ## Product principle
 
-ZenPDF should remain recognizable as:
-
 > A calm, fast, privacy-first PDF workspace.
 
-The modernization should make the application more trustworthy and capable without making it noisier.
+Technical hardening should make ZenPDF more trustworthy without making it noisier.
